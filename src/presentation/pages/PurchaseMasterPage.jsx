@@ -69,7 +69,7 @@ function calcItem(item, igstBill = false) {
 }
 
 function calcTotals(items, overrides, igstBill) {
-  const valid = items.filter(i => i.ProductCode);
+  const valid = items.filter(i => i.Productcode);
   const grossAmt  = r2(valid.reduce((s, i) => s + (parseFloat(i.ProductTotal) || 0), 0));
   const gstAmt    = r2(valid.reduce((s, i) => s + (parseFloat(i.TaxAmt)       || 0), 0));
   const cessAmt   = r2(valid.reduce((s, i) => s + (parseFloat(i.CESSAmount)   || 0), 0));
@@ -107,7 +107,7 @@ function calcTotals(items, overrides, igstBill) {
 
 function buildGstRows(items, igstBill) {
   const map = {};
-  items.filter(i => i.ProductCode).forEach(i => {
+  items.filter(i => i.Productcode).forEach(i => {
     const k = parseFloat(i.TaxPercent) || 0;
     if (!map[k]) map[k] = { gstPer: k, gstAmt: 0, cgst: 0, sgst: 0 };
     map[k].gstAmt = r2(map[k].gstAmt + (parseFloat(i.TaxAmt)    || 0));
@@ -124,7 +124,7 @@ let rowCounter = 0;
 function newRow() {
   return {
     _id: `row_${++rowCounter}`,
-    ProductCode: '', ProductName: '', ProductRefId: 0,
+    Productcode: '', ProductName: '', ProductRefId: 0,
     HSNCode: '', UOM: '', UOMDecimal: 2,
     MRP: '0.00', PurchaseRate: '0.00', StockQty: '0.000',
     ItemQty: '0', FreeQty: '0', Noms: '0',
@@ -145,7 +145,7 @@ function newRow() {
 // Grid columns  (visible ones matching the screenshot)
 // ─────────────────────────────────────────────────────────────────────────────
 const COLS = [
-  { key: 'ProductCode',      label: 'Product Code',  w: 90,  align: 'left',  editable: true,  type: 'code' },
+  { key: 'Productcode',      label: 'Product Code',  w: 90,  align: 'left',  editable: true,  type: 'code' },
   { key: 'ProductName',      label: 'Description',   w: 200, align: 'left',  editable: true,  type: 'name' },
   { key: 'MRP',              label: 'MRP',           w: 80,  align: 'right', editable: true,  type: 'num'  },
   { key: 'PurchaseRate',     label: 'Pur.Rate',      w: 80,  align: 'right', editable: true,  type: 'num'  },
@@ -160,18 +160,19 @@ const COLS = [
 ];
 
 // Tab/Enter focus order within a row
-const FOCUS_KEYS = ['ProductCode', 'MRP', 'PurchaseRate', 'ItemQty', 'DiscountPercent', 'TaxPercent', 'SalesRate'];
+const FOCUS_KEYS = ['Productcode', 'MRP', 'PurchaseRate', 'ItemQty', 'DiscountPercent', 'TaxPercent', 'SalesRate'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Product Search Modal
 // ─────────────────────────────────────────────────────────────────────────────
 function ProductSearchModal({ open, rowIdx, initialQuery, onClose, onSelect }) {
-  const [query,    setQuery]    = useState('');
-  const [list,     setList]     = useState([]);
-  const [loading,  setLoading]  = useState(false);
-  const [selIdx,   setSelIdx]   = useState(0);
-  const inputRef  = useRef(null);
-  const listRef   = useRef(null);
+  const [query,   setQuery]   = useState('');
+  const [list,    setList]    = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selIdx,  setSelIdx]  = useState(0);
+  const inputRef = useRef(null);
+  const listRef  = useRef(null);
+  const itemRefs = useRef([]);          // ✅ NEW — normal array ref
 
   // Reset & focus when modal opens
   useEffect(() => {
@@ -181,76 +182,76 @@ function ProductSearchModal({ open, rowIdx, initialQuery, onClose, onSelect }) {
     setTimeout(() => inputRef.current?.focus(), 60);
   }, [open, initialQuery]);
 
-  // Debounced search
+  // ✅ Modal open aana udane — full list load, query illama
   useEffect(() => {
     if (!open) return;
-    const t = setTimeout(async () => {
-      if (!query.trim()) { setList([]); return; }
-      setLoading(true);
-      try {
-        const r = await PurchaseApi.searchProducts(query.trim());
-        setList(r.data || []);
-        setSelIdx(0);
-      } catch { setList([]); }
+    setLoading(true);
+    PurchaseApi.searchProducts('').then(r => {
+      setList(r.data || []);
+      setSelIdx(0);
       setLoading(false);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [query, open]);
+    }).catch(() => {
+      setList([]);
+      setLoading(false);
+    });
+  }, [open]);                           // ← open mattum trigger, query illai
 
-  // Scroll selected row into view
+  // ✅ Scroll selected into view — itemRefs use pannunga
   useEffect(() => {
-    const el = listRef.current?.children[selIdx];
-    el?.scrollIntoView({ block: 'nearest' });
+    itemRefs.current[selIdx]?.scrollIntoView({ block: 'nearest' });
   }, [selIdx]);
 
+  // ✅ Local filter — API call illai, query type pannapo filter
+  const filtered = list.filter(p => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return (
+      p.ProductName?.toLowerCase().includes(q) ||
+      p.Productcode?.toLowerCase().includes(q)  // API response la 'Productcode' (lowercase c)
+    );
+  });
+
   const handleKey = e => {
-    if (e.key === 'ArrowDown')  { e.preventDefault(); setSelIdx(s => Math.min(s + 1, list.length - 1)); }
-    if (e.key === 'ArrowUp')    { e.preventDefault(); setSelIdx(s => Math.max(s - 1, 0)); }
-    if (e.key === 'Enter')      { e.preventDefault(); if (list[selIdx]) onSelect(list[selIdx], rowIdx); }
-    if (e.key === 'Escape')     { e.preventDefault(); onClose(); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelIdx(s => Math.min(s + 1, filtered.length - 1)); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setSelIdx(s => Math.max(s - 1, 0)); }
+    if (e.key === 'Enter')     { e.preventDefault(); if (filtered[selIdx]) onSelect(filtered[selIdx], rowIdx); }
+    if (e.key === 'Escape')    { e.preventDefault(); onClose(); }
   };
 
   if (!open) return null;
   return (
     <div style={MS.backdrop} onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div style={{ ...MS.box, width: 760, top: 55, position: 'fixed', left: '50%', transform: 'translateX(-50%)', maxHeight: '80vh' }}>
-        {/* Header */}
         <div style={MS.hdr}>
           🔍 Product Search
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'white', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
-
-        {/* Search input */}
         <div style={{ padding: '7px 10px', borderBottom: '1px solid #dde5f5' }}>
           <input
             ref={inputRef}
-            style={{ width: '100%', height: 28, padding: '0 8px', border: '1px solid #1f65de', borderRadius: 4, fontSize: 13, outline: 'none' }}
+            style={{ width: '100%', height: 28, padding: '0 8px', border: '1px solid #2563eb', borderRadius: 4, fontSize: 13, outline: 'none' }}
             placeholder="Product name / code enter pannunga..."
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => { setQuery(e.target.value); setSelIdx(0); }}
             onKeyDown={handleKey}
           />
         </div>
-
-        {/* Column headers */}
-        <div style={{ display: 'flex', background: '#1f65de', color: 'white', fontSize: 11, fontWeight: 600, padding: '4px 0' }}>
+        <div style={{ display: 'flex', background: '#f8fafc', color: '#334155', fontSize: 11, borderBottom: '1px solid #e2e8f0', fontWeight: 600, padding: '4px 0' }}>
           {[['Code',80],['Description',280],['Pur.Rate',80],['MRP',70],['Stock',70],['UOM',55],['GST%',55]].map(([h,w]) => (
             <span key={h} style={{ width: w, padding: '0 6px', textAlign: h==='Description'?'left':'right', flexShrink:0 }}>{h}</span>
           ))}
         </div>
-
-        {/* List */}
         <div style={{ overflowY: 'auto', maxHeight: 320 }} ref={listRef}>
-          {loading && <div style={{ padding: 16, textAlign: 'center', color: '#888', fontSize: 12 }}>Searching...</div>}
-          {!loading && list.length === 0 && (
+          {loading && <div style={{ padding: 16, textAlign: 'center', color: '#888', fontSize: 12 }}>Loading...</div>}
+          {!loading && filtered.length === 0 && (
             <div style={{ padding: 16, textAlign: 'center', color: '#888', fontSize: 12 }}>
               {query ? 'No products found' : 'Type to search...'}
             </div>
           )}
-          {list.map((p, i) => (
+          {!loading && filtered.map((p, i) => (
             <div
               key={p.Id || i}
-              ref={el => { if (listRef.current) listRef.current.children[i] = el; }}
+              ref={el => itemRefs.current[i] = el}   // ✅ FIX — normal array assign
               onClick={() => onSelect(p, rowIdx)}
               style={{
                 display: 'flex', alignItems: 'center', padding: '4px 0',
@@ -258,18 +259,16 @@ function ProductSearchModal({ open, rowIdx, initialQuery, onClose, onSelect }) {
                 borderBottom: '1px solid #f0f4ff', cursor: 'pointer', fontSize: 12,
               }}
             >
-              <span style={{ width:80,  padding:'0 6px', color:'#4a6080', fontFamily:'monospace', flexShrink:0 }}>{p.ProductCode}</span>
+              <span style={{ width:80,  padding:'0 6px', color:'#4a6080', fontFamily:'monospace', flexShrink:0 }}>{p.Productcode}</span>
               <span style={{ width:280, padding:'0 6px', fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flexShrink:0 }}>{p.ProductName}</span>
-              <span style={{ width:80,  padding:'0 6px', textAlign:'right', fontFamily:'monospace', color:'#1a2b4a', flexShrink:0 }}>{f2(p.PurchaseRate)}</span>
-              <span style={{ width:70,  padding:'0 6px', textAlign:'right', fontFamily:'monospace', color:'#1f65de', flexShrink:0 }}>₹{f2(p.MRP)}</span>
-              <span style={{ width:70,  padding:'0 6px', textAlign:'right', fontFamily:'monospace', color: (p.Stock||0)>0?'#16a34a':'#dc2626', flexShrink:0 }}>{f2(p.Stock)}</span>
+              <span style={{ width:80,  padding:'0 6px', textAlign:'right', fontFamily:'monospace', color:'#1a2b4a', flexShrink:0 }}>{f2(p.PurRate)}</span>
+              <span style={{ width:70,  padding:'0 6px', textAlign:'right', fontFamily:'monospace', color:'#2563eb', flexShrink:0 }}>₹{f2(p.MRP)}</span>
+              <span style={{ width:70,  padding:'0 6px', textAlign:'right', fontFamily:'monospace', flexShrink:0 }}>{f2(p.Stock)}</span>
               <span style={{ width:55,  padding:'0 6px', textAlign:'center', color:'#888', flexShrink:0 }}>{p.UOM}</span>
               <span style={{ width:55,  padding:'0 6px', textAlign:'right', color:'#888', flexShrink:0 }}>{p.GST}%</span>
             </div>
           ))}
         </div>
-
-        {/* Footer hint */}
         <div style={{ padding: '4px 10px', background: '#f5f5f5', fontSize: 11, color: '#888', borderTop: '1px solid #ddd', display:'flex', gap:12 }}>
           <span>↑↓ Navigate</span><span>Enter — Select</span><span>Esc — Close</span>
         </div>
@@ -308,7 +307,7 @@ function F5ViewModal({ suppliers, onClose, onEditLoad }) {
           <button onClick={onClose} style={{ marginLeft:'auto', background:'none', border:'none', color:'white', fontSize:18, cursor:'pointer' }}>✕</button>
         </div>
         {/* Filter bar */}
-        <div style={{ padding:'8px 10px', display:'flex', gap:8, alignItems:'flex-end', borderBottom:'1px solid #dde5f5', flexWrap:'wrap' }}>
+        <div style={{ padding:'10px 12px', display:'flex', gap:8, alignItems:'flex-end', borderBottom:'1px solid #dde5f5', flexWrap:'wrap' }}>
           <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
             <label style={FS.label}>From Date</label>
             <input type="date" style={{ ...FS.input, width:140 }} value={from} onChange={e=>setFrom(e.target.value)} />
@@ -334,7 +333,7 @@ function F5ViewModal({ suppliers, onClose, onEditLoad }) {
               <thead>
                 <tr>
                   {['S.No','Pur.No','Date','Type','Supplier','Invoice No','Net Amt','Action'].map(h => (
-                    <th key={h} style={{ background:'#1f65de', color:'white', padding:'5px 8px',
+                    <th key={h} style={{ background:'#f8fafc', color:'#334155', padding:'5px 8px',
                       textAlign:h==='Net Amt'?'right':'left', position:'sticky', top:0 }}>{h}</th>
                   ))}
                 </tr>
@@ -344,7 +343,7 @@ function F5ViewModal({ suppliers, onClose, onEditLoad }) {
                 {list.map((row, i) => (
                   <tr key={row.Id||i} style={{ borderBottom:'1px solid #dde5f5', background: i%2===0?'white':'#fafcff' }}>
                     <td style={{ padding:'4px 8px' }}>{i+1}</td>
-                    <td style={{ padding:'4px 8px', fontWeight:600, color:'#1f65de' }}>{row.PurchaseNo}</td>
+                    <td style={{ padding:'4px 8px', fontWeight:600, color:'#2563eb' }}>{row.PurchaseNo}</td>
                     <td style={{ padding:'4px 8px' }}>{fmtDate(row.PurchaseDate)}</td>
                     <td style={{ padding:'4px 8px' }}>{row.PurchaseType==='CA'?'CASH':'CREDIT'}</td>
                     <td style={{ padding:'4px 8px' }}>{row.SupplierName}</td>
@@ -352,7 +351,7 @@ function F5ViewModal({ suppliers, onClose, onEditLoad }) {
                     <td style={{ padding:'4px 8px', textAlign:'right', fontFamily:'monospace', fontWeight:600 }}>{f2(row.NetAmt)}</td>
                     <td style={{ padding:'4px 8px' }}>
                       <button
-                        style={{ background:'#e8f0fd', border:'1px solid #1f65de', color:'#1f65de', borderRadius:3, padding:'2px 8px', fontSize:11, cursor:'pointer', fontWeight:600 }}
+                        style={{ background:'#eff6ff', border:'1px solid #2563eb', color:'#2563eb', borderRadius:3, padding:'2px 8px', fontSize:11, cursor:'pointer', fontWeight:600 }}
                         onClick={() => { onEditLoad(row.Id); onClose(); }}>
                         ✏️ Edit
                       </button>
@@ -400,7 +399,7 @@ function ToastHost() {
     window.addEventListener('pm-toast', h);
     return () => window.removeEventListener('pm-toast', h);
   }, []);
-  const colors = { success:'#16a34a', error:'#dc2626', warn:'#d97706', info:'#1f65de' };
+  const colors = { success:'#16a34a', error:'#dc2626', warn:'#d97706', info:'#2563eb' };
   const icons  = { success:'✅', error:'❌', warn:'⚠️', info:'ℹ️' };
   return (
     <div style={{ position:'fixed', top:50, right:12, zIndex:9999, display:'flex', flexDirection:'column', gap:5 }}>
@@ -418,19 +417,26 @@ function ToastHost() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Modal & form shared styles
 // ─────────────────────────────────────────────────────────────────────────────
+const C = {
+  primary:'#2563eb', primaryHov:'#1d4ed8', primarySoft:'#eff6ff', primaryBord:'#bfdbfe',
+  grey50:'#f8fafc', grey100:'#f1f5f9', grey200:'#e2e8f0', grey300:'#cbd5e1',
+  grey400:'#94a3b8', grey500:'#64748b', grey700:'#334155', grey900:'#0f172a',
+  success:'#16a34a', danger:'#dc2626', white:'#ffffff',
+  cardHdr:'linear-gradient(90deg, #2563eb 0%, #60a5fa 100%)',
+};
 const MS = {
-  backdrop: { position:'fixed', inset:0, background:'rgba(10,20,50,0.5)', zIndex:8000, display:'flex', alignItems:'flex-start', justifyContent:'center' },
-  box:      { background:'white', borderRadius:8, boxShadow:'0 20px 60px rgba(10,20,50,0.3)', overflow:'hidden', maxWidth:'96vw' },
-  hdr:      { background:'#1f65de', color:'white', padding:'10px 14px', fontWeight:600, fontSize:14, display:'flex', alignItems:'center', gap:8 },
+  backdrop: { position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:8000, display:'flex', alignItems:'flex-start', justifyContent:'center' },
+  box:      { background:'#ffffff', borderRadius:8, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', overflow:'hidden', maxWidth:'96vw' },
+  hdr:      { background:'#ffffff', color:'#2563eb', padding:'10px 14px', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb', fontWeight:600, fontSize:14, display:'flex', alignItems:'center', gap:8 },
 };
 const FS = {
-  label:    { fontSize:10.5, fontWeight:500, color:'#4a6080', textTransform:'uppercase', letterSpacing:'0.3px' },
-  input:    { height:26, padding:'0 7px', border:'1px solid #dde5f5', borderRadius:3, fontSize:12, fontFamily:'inherit', color:'#1a2b4a', outline:'none', background:'white' },
-  inputRO:  { height:26, padding:'0 7px', border:'1px solid #dde5f5', borderRadius:3, fontSize:12, fontFamily:'inherit', color:'#4a6080', outline:'none', background:'#f0f4ff', cursor:'not-allowed' },
-  select:   { height:26, padding:'0 5px', border:'1px solid #dde5f5', borderRadius:3, fontSize:12, fontFamily:'inherit', color:'#1a2b4a', background:'white', cursor:'pointer', outline:'none' },
-  btnP:     { background:'#1f65de', color:'white', border:'none', borderRadius:4, fontWeight:600, fontSize:12, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, fontFamily:'inherit', height:30, padding:'0 14px' },
-  btnSec:   { background:'white', color:'#1f65de', border:'1px solid #1f65de', borderRadius:4, fontWeight:600, fontSize:12, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, fontFamily:'inherit', height:30, padding:'0 14px' },
-  btnDanger:{ background:'white', color:'#dc2626', border:'1px solid #dc2626', borderRadius:4, fontWeight:600, fontSize:12, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, fontFamily:'inherit', height:30, padding:'0 14px' },
+  label:    { fontSize:10, fontWeight:600, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:2 },
+  input:    { height:26, padding:'0 7px', border:'1px solid #cbd5e1', borderRadius:4, fontSize:12, fontFamily:'inherit', color:'#0f172a', outline:'none', background:'#ffffff' },
+  inputRO:  { height:26, padding:'0 7px', border:'1px solid #e2e8f0', borderRadius:4, fontSize:12, fontFamily:'inherit', color:'#64748b', outline:'none', background:'#f8fafc', cursor:'not-allowed' },
+  select:   { height:26, padding:'0 6px', border:'1px solid #cbd5e1', borderRadius:4, fontSize:12, fontFamily:'inherit', color:'#0f172a', background:'#ffffff', cursor:'pointer', outline:'none' },
+  btnP:     { background:'#2563eb', color:'white', border:'none', borderRadius:4, fontWeight:600, fontSize:12, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, fontFamily:'inherit', height:30, padding:'0 14px' },
+  btnSec:   { background:'#ffffff', color:'#334155', border:'1px solid #cbd5e1', borderRadius:4, fontWeight:600, fontSize:12, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, fontFamily:'inherit', height:30, padding:'0 14px' },
+  btnDanger:{ background:'#ffffff', color:'#dc2626', border:'1px solid #dc2626', borderRadius:4, fontWeight:600, fontSize:12, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, fontFamily:'inherit', height:30, padding:'0 14px' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -565,7 +571,7 @@ export function PurchaseMasterPage() {
       const next = [...prev];
       const base = {
         ...next[rowIdx],
-        ProductCode:     p.ProductCode     || '',
+        Productcode:     p.Productcode     || '',
         ProductName:     p.ProductName     || '',
         ProductRefId:    p.Id              || 0,
         HSNCode:         p.HSNCode         || '',
@@ -600,8 +606,8 @@ export function PurchaseMasterPage() {
     focusCell(rowIdx, 'ItemQty');
   }, [igst, focusCell]);
 
-  // ─── ProductCode Enter: lookup then modal ────────────────────────────────
-  const handleProductCodeEnter = useCallback(async (idx, code) => {
+  // ─── Productcode Enter: lookup then modal ────────────────────────────────
+  const handleProductcodeEnter = useCallback(async (idx, code) => {
     const trimmed = code.trim();
     if (!trimmed) {
       // Empty → open modal with blank search
@@ -629,8 +635,8 @@ export function PurchaseMasterPage() {
     if (e.key !== 'Enter') return;
     e.preventDefault();
 
-    if (colKey === 'ProductCode') {
-      handleProductCodeEnter(idx, items[idx].ProductCode);
+    if (colKey === 'Productcode') {
+      handleProductcodeEnter(idx, items[idx].Productcode);
       return;
     }
     if (colKey === 'ProductName') {
@@ -645,15 +651,15 @@ export function PurchaseMasterPage() {
       return;
     }
 
-    // Last column → next row ProductCode
+    // Last column → next row Productcode
     const nextIdx = idx + 1;
     if (nextIdx >= items.length) {
       setItems(p => [...p, newRow()]);
-      setTimeout(() => focusCell(nextIdx, 'ProductCode'), 50);
+      setTimeout(() => focusCell(nextIdx, 'Productcode'), 50);
     } else {
-      focusCell(nextIdx, 'ProductCode');
+      focusCell(nextIdx, 'Productcode');
     }
-  }, [items, handleProductCodeEnter, focusCell]);
+  }, [items, handleProductcodeEnter, focusCell]);
 
   // ─── Delete row ──────────────────────────────────────────────────────────
   const deleteRow = useCallback(idx => {
@@ -667,7 +673,7 @@ export function PurchaseMasterPage() {
   const handleSave = useCallback(async () => {
     if (!supplierId) { showToast('Supplier select pannunga!', 'error'); return; }
     if (!invoiceNo.trim()) { showToast('Invoice No enter pannunga!', 'error'); return; }
-    const validItems = items.filter(i => i.ProductCode);
+    const validItems = items.filter(i => i.Productcode);
     if (!validItems.length) { showToast('Minimum one product add pannunga!', 'error'); return; }
     if (parseFloat(invoiceAmt) > 0 && parseFloat(invoiceAmt) !== parseFloat(totals.netAmt)) {
       showToast('Invoice Amount ≠ Net Total — confirm pannunga!', 'warn');
@@ -718,7 +724,7 @@ export function PurchaseMasterPage() {
       PurchaseDetails: validItems.map(i => ({
         PDId:              i.id || 0,
         ProductRefId:      i.ProductRefId,
-        ProductCode:       i.ProductCode,
+        Productcode:       i.Productcode,
         ProductName:       i.ProductName,
         HSNCode:           i.HSNCode,
         UOM:               i.UOM,
@@ -818,7 +824,7 @@ export function PurchaseMasterPage() {
         const base = {
           _id: `row_${++rowCounter}`,
           id: p.PDId || 0,
-          ProductCode:     p.ProductCode    || '',
+          Productcode:     p.Productcode    || '',
           ProductName:     p.ProductName    || '',
           ProductRefId:    p.ProductRefId   || 0,
           HSNCode:         p.HSNCode        || '',
@@ -897,19 +903,19 @@ export function PurchaseMasterPage() {
   const balColor = supInfo.Balance < 0 ? '#dc2626' : supInfo.Balance > 0 ? '#16a34a' : '#888';
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', fontFamily:"'DM Sans',sans-serif", fontSize:12, background:'#f0f4ff', overflow:'hidden' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', fontFamily:"'DM Sans',sans-serif", fontSize:12, background:'#f8fafc', overflow:'hidden' }}>
 
       {/* ═══ TOP BAR ═══════════════════════════════════════════════════════ */}
-      <div style={{ background:'#1f65de', color:'white', height:44, display:'flex', alignItems:'center', padding:'0 14px', gap:12, flexShrink:0, boxShadow:'0 2px 6px rgba(31,101,222,0.35)', zIndex:100 }}>
-        <span style={{ fontWeight:700, fontSize:15 }}>KassaPOS</span>
-        <span style={{ fontSize:12.5, opacity:0.9 }}>{localStorage.getItem('CompanyName') || 'KASSAPOS SOFTWARE SOLUTIONS'}</span>
+      <div style={{ background:'#ffffff', color:'#1a1a1a', height:44, borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', padding:'0 14px', gap:12, flexShrink:0, boxShadow:'0 2px 6px rgba(31,101,222,0.35)', zIndex:100 }}>
+        <span style={{ fontWeight:700, fontSize:15, color:'#2563eb' }}>KassaPOS</span>
+        <span style={{ fontSize:12.5, color:'#64748b' }}>{localStorage.getItem('CompanyName') || 'KASSAPOS SOFTWARE SOLUTIONS'}</span>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
-          <span style={{ fontSize:12 }}>Bill Amount:</span>
-          <span style={{ fontWeight:700, fontSize:14, fontFamily:'monospace', background:'rgba(255,255,255,0.15)', padding:'2px 10px', borderRadius:4 }}>
+          <span style={{ fontSize:12, color:'#64748b' }}>Bill Amount:</span>
+          <span style={{ fontWeight:700, fontSize:14, fontFamily:'monospace', color:'#16a34a' }}>
             Rs.{totals.netAmt}
           </span>
           {editMode && (
-            <span style={{ background:'rgba(255,200,0,0.25)', border:'1px solid rgba(255,200,0,0.4)', padding:'2px 9px', borderRadius:4, fontSize:11.5, color:'#ffe066', fontWeight:600 }}>
+            <span style={{ background:'#fef9c3', border:'1px solid #fde047', padding:'2px 9px', borderRadius:4, fontSize:11.5, color:'#854d0e', fontWeight:600 }}>
               ✏️ EDIT MODE
             </span>
           )}
@@ -917,15 +923,15 @@ export function PurchaseMasterPage() {
       </div>
 
       {/* ═══ SCROLLABLE PAGE ════════════════════════════════════════════════ */}
-      <div style={{ flex:1, overflow:'auto', padding:'6px 8px', display:'flex', flexDirection:'column', gap:6 }}>
+      <div style={{ flex:1, overflow:'auto', padding:'10px 12px', display:'flex', flexDirection:'column', gap:8 }}>
 
         {/* ── ROW 1: Purchase Info | Supplier Info | Invoice Info ── */}
         <div style={{ display:'flex', gap:6 }}>
 
           {/* Purchase Info */}
-          <div style={{ background:'white', border:'1px solid #dde5f5', borderRadius:6, flex:'0 0 310px', boxShadow:'0 1px 3px rgba(31,101,222,0.07)' }}>
-            <div style={{ background:'#1f65de', color:'white', padding:'5px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0' }}>📋 Purchase Info</div>
-            <div style={{ padding:'8px 10px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'5px 8px' }}>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 310px',  }}>
+            <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>📋 Purchase Info</div>
+            <div style={{ padding:'10px 12px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'5px 8px' }}>
               <LF label="Purchase No">
                 <input style={FS.inputRO} value={purchaseNo} readOnly />
               </LF>
@@ -947,9 +953,9 @@ export function PurchaseMasterPage() {
           </div>
 
           {/* Supplier Info */}
-          <div style={{ background:'white', border:'1px solid #dde5f5', borderRadius:6, flex:1, boxShadow:'0 1px 3px rgba(31,101,222,0.07)' }}>
-            <div style={{ background:'#1f65de', color:'white', padding:'5px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0' }}>🏭 Supplier Info</div>
-            <div style={{ padding:'8px 10px' }}>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:1,  }}>
+            <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>🏭 Supplier Info</div>
+            <div style={{ padding:'10px 12px' }}>
               <LF label="Supplier Name">
                 <select style={{ ...FS.select, width:'100%', height:28 }} value={supplierId} onChange={e => handleSupplierChange(e.target.value)}>
                   <option value={0}>Select SupplierName</option>
@@ -975,9 +981,9 @@ export function PurchaseMasterPage() {
           </div>
 
           {/* Invoice + Bill Amount */}
-          <div style={{ background:'white', border:'1px solid #dde5f5', borderRadius:6, flex:'0 0 270px', boxShadow:'0 1px 3px rgba(31,101,222,0.07)' }}>
-            <div style={{ background:'#1f65de', color:'white', padding:'5px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0' }}>🧾 Invoice Info</div>
-            <div style={{ padding:'8px 10px', display:'flex', flexDirection:'column', gap:5 }}>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 270px',  }}>
+            <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>🧾 Invoice Info</div>
+            <div style={{ padding:'10px 12px', display:'flex', flexDirection:'column', gap:5 }}>
               {/* Bill amount display */}
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'#e8f0fd', borderRadius:4, padding:'4px 8px', marginBottom:2 }}>
                 <span style={{ fontSize:11.5, color:'#1750b8', fontWeight:600 }}>Bill Amount</span>
@@ -998,9 +1004,9 @@ export function PurchaseMasterPage() {
         </div>
 
         {/* ── PRODUCT GRID ── */}
-        <div style={{ background:'white', border:'1px solid #dde5f5', borderRadius:6, boxShadow:'0 1px 3px rgba(31,101,222,0.07)' }}>
+        <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6,  }}>
           {/* Grid header */}
-          <div style={{ background:'#1f65de', color:'white', padding:'5px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb', display:'flex', alignItems:'center', gap:10 }}>
             📦 Products
             <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
               {['exclusive','inclusive'].map(m => (
@@ -1038,7 +1044,7 @@ export function PurchaseMasterPage() {
               </thead>
               <tbody>
                 {items.map((item, idx) => (
-                  <tr key={item._id} style={{ background:item.EditMode?'#eefaf1':'white', borderBottom:'1px solid #f0f4ff' }}>
+                  <tr key={item._id} style={{ background:item.EditMode?'#f0fdf4':'#ffffff', borderBottom:'1px solid #f0f4ff' }}>
                     <td style={{ ...TD, textAlign:'center', color:'#8099be', fontSize:11 }}>{idx+1}</td>
 
                     {COLS.map(col => (
@@ -1047,14 +1053,14 @@ export function PurchaseMasterPage() {
                           <input
                             ref={setRef(idx, col.key)}
                             style={{ width:'100%', height:22, padding:'0 3px',
-                              border:'1px solid #dde5f5', borderRadius:2, fontSize:11.5, outline:'none',
+                              border:'1px solid #aaaaaa', borderRadius:2, fontSize:11.5, outline:'none',
                               textAlign: col.align, fontFamily: col.align==='left' ? 'inherit' : 'monospace',
                               background:'white', color:'#1a2b4a' }}
                             value={item[col.key] ?? ''}
                             onFocus={e => {
                               e.target.select();
-                              e.target.style.borderColor = '#1f65de';
-                              e.target.style.boxShadow  = '0 0 0 2px rgba(31,101,222,0.15)';
+                              e.target.style.borderColor = '#2563eb';
+                              e.target.style.boxShadow  = '0 0 0 2px rgba(37,99,235,0.15)';
                             }}
                             onBlur={e => {
                               e.target.style.borderColor = '#dde5f5';
@@ -1086,9 +1092,9 @@ export function PurchaseMasterPage() {
           </div>
 
           {/* Grid footer */}
-          <div style={{ padding:'5px 8px', display:'flex', alignItems:'center', gap:8, borderTop:'1px solid #dde5f5', background:'#fafcff' }}>
+          <div style={{ padding:'5px 8px', display:'flex', alignItems:'center', gap:8, borderTop:'1px solid #e2e8f0', background:'#f8fafc' }}>
             <button
-              style={{ background:'#e8f0fd', border:'1px dashed #1f65de', color:'#1f65de', borderRadius:3, padding:'3px 10px', fontSize:11.5, cursor:'pointer', fontWeight:600 }}
+              style={{ background:'#eff6ff', border:'1px dashed #2563eb', color:'#2563eb', borderRadius:3, padding:'3px 10px', fontSize:11.5, cursor:'pointer', fontWeight:600 }}
               onClick={() => setItems(p => [...p, newRow()])}>
               ＋ Add Row
             </button>
@@ -1098,8 +1104,8 @@ export function PurchaseMasterPage() {
               🔍 Search Product
             </button>
             <span style={{ marginLeft:'auto', fontSize:11, color:'#8099be' }}>
-              {items.filter(i=>i.ProductCode).length} item(s) &nbsp;|&nbsp;
-              Go to page: 1 &nbsp; Show rows: 15 &nbsp; {items.filter(i=>i.ProductCode).length}-{items.filter(i=>i.ProductCode).length} of {items.filter(i=>i.ProductCode).length}
+              {items.filter(i=>i.Productcode).length} item(s) &nbsp;|&nbsp;
+              Go to page: 1 &nbsp; Show rows: 15 &nbsp; {items.filter(i=>i.Productcode).length}-{items.filter(i=>i.Productcode).length} of {items.filter(i=>i.Productcode).length}
             </span>
           </div>
         </div>
@@ -1108,17 +1114,17 @@ export function PurchaseMasterPage() {
         <div style={{ display:'flex', gap:6, alignItems:'flex-start' }}>
 
           {/* Left: Remarks + GST */}
-          <div style={{ background:'white', border:'1px solid #dde5f5', borderRadius:6, flex:'0 0 330px', boxShadow:'0 1px 3px rgba(31,101,222,0.07)' }}>
-            <div style={{ background:'#1f65de', color:'white', padding:'5px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0' }}>📊 GST Summary</div>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 330px',  }}>
+            <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>📊 GST Summary</div>
             <div style={{ padding:'6px 8px' }}>
               {/* Tax mode badges + remarks */}
               <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:6 }}>
                 <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:12, cursor:'pointer' }}>
-                  <input type="radio" name="taxMode2" value="exclusive" checked={taxMode==='exclusive'} onChange={()=>setTaxMode('exclusive')} style={{ accentColor:'#1f65de' }} />
+                  <input type="radio" name="taxMode2" value="exclusive" checked={taxMode==='exclusive'} onChange={()=>setTaxMode('exclusive')} style={{ accentColor:'#2563eb' }} />
                   Exclusive
                 </label>
                 <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:12, cursor:'pointer' }}>
-                  <input type="radio" name="taxMode2" value="inclusive" checked={taxMode==='inclusive'} onChange={()=>setTaxMode('inclusive')} style={{ accentColor:'#1f65de' }} />
+                  <input type="radio" name="taxMode2" value="inclusive" checked={taxMode==='inclusive'} onChange={()=>setTaxMode('inclusive')} style={{ accentColor:'#2563eb' }} />
                   Inclusive
                 </label>
               </div>
@@ -1128,7 +1134,7 @@ export function PurchaseMasterPage() {
               {/* GST table */}
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
                 <thead>
-                  <tr style={{ background:'#1f65de', color:'white' }}>
+                  <tr style={{ background:'#f8fafc', color:'#334155' }}>
                     <th style={{ padding:'4px 6px', textAlign:'center', fontWeight:500 }}>GST %</th>
                     <th style={{ padding:'4px 6px', textAlign:'right', fontWeight:500 }}>GST Amt</th>
                     <th style={{ padding:'4px 6px', textAlign:'right', fontWeight:500 }}>CGST Amt</th>
@@ -1153,8 +1159,8 @@ export function PurchaseMasterPage() {
           </div>
 
           {/* Right: Amount Summary */}
-          <div style={{ background:'white', border:'1px solid #dde5f5', borderRadius:6, flex:1, boxShadow:'0 1px 3px rgba(31,101,222,0.07)' }}>
-            <div style={{ background:'#1f65de', color:'white', padding:'5px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0' }}>💵 Amount Summary</div>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:1,  }}>
+            <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>💵 Amount Summary</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', borderTop:'1px solid #dde5f5' }}>
 
               {/* Col 1 */}
@@ -1191,10 +1197,10 @@ export function PurchaseMasterPage() {
       </div>{/* end scrollable page */}
 
       {/* ═══ SHORTCUTS BAR ══════════════════════════════════════════════════ */}
-      <div style={{ background:'#e8e8e8', borderTop:'1px solid #ccc', padding:'3px 10px', display:'flex', flexShrink:0, alignItems:'center', gap:10, flexWrap:'wrap' }}>
+      <div style={{ background:'#f8fafc', borderTop:'1px solid #e2e8f0', padding:'3px 10px', display:'flex', flexShrink:0, alignItems:'center', gap:10, flexWrap:'wrap' }}>
         {[['F1','Save'],['F2','Free Product'],['F3','Edit'],['F5','View'],['F9','Delete'],['DEL','Delete'],['ESC','Exit']].map(([k,l]) => (
           <span key={k} style={{ display:'flex', alignItems:'center', gap:3, fontSize:11, color:'#555' }}>
-            <span style={{ background:'#e8f0fd', border:'1px solid #c5d9f9', color:'#1750b8', fontFamily:'monospace', fontWeight:700, fontSize:10, padding:'1px 5px', borderRadius:3 }}>{k}</span>
+            <span style={{ background:'#eff6ff', border:'1px solid #bfdbfe', color:'#1d4ed8', fontFamily:'monospace', fontWeight:700, fontSize:10, padding:'1px 5px', borderRadius:3 }}>{k}</span>
             {l} &nbsp;|
           </span>
         ))}
@@ -1244,7 +1250,7 @@ export function PurchaseMasterPage() {
       {/* Spinner */}
       {loading && (
         <div style={{ position:'fixed', inset:0, background:'rgba(31,101,222,0.06)', zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(1px)' }}>
-          <div style={{ width:38, height:38, border:'3px solid #c5d9f9', borderTopColor:'#1f65de', borderRadius:'50%', animation:'spin 0.6s linear infinite' }} />
+          <div style={{ width:38, height:38, border:'3px solid #bfdbfe', borderTopColor:'#2563eb', borderRadius:'50%', animation:'spin 0.6s linear infinite' }} />
         </div>
       )}
 
@@ -1255,14 +1261,14 @@ export function PurchaseMasterPage() {
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         input[type=text]:focus,input[type=number]:focus,input[type=date]:focus,select:focus {
-          border-color: #1f65de !important;
+          border-color: #2563eb !important; box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
           box-shadow: 0 0 0 2px rgba(31,101,222,0.15) !important;
           outline: none;
         }
         input[type=radio], input[type=checkbox] { cursor: pointer; }
         @keyframes spin { to { transform: rotate(360deg); } }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: #c5d9f9; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: #bfdbfe; border-radius: 3px; }
         ::-webkit-scrollbar-track { background: transparent; }
         /* remove number input arrows */
         input[type=number]::-webkit-inner-spin-button,
@@ -1286,17 +1292,16 @@ function LF({ label, children }) {
   );
 }
 
-
 /** Amount Row */
 function AR({ label, value, editable, onChange, highlight }) {
   return (
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
       padding:'3px 7px', borderBottom:'1px solid #f0f4ff', fontSize:12,
-      background: highlight ? '#e8f0fd' : 'white' }}>
-      <span style={{ color: highlight?'#1f65de':'#4a6080', fontWeight: highlight?700:'normal' }}>{label}</span>
+      background: highlight ? '#eff6ff' : 'white' }}>
+      <span style={{ color: highlight?'#2563eb':'#64748b', fontWeight: highlight?700:'normal' }}>{label}</span>
       {editable ? (
         <input
-          style={{ width:90, height:20, padding:'0 4px', border:'1px solid #dde5f5', borderRadius:2,
+          style={{ width:90, height:20, padding:'0 4px', border:'1px solid #aaaaaa', borderRadius:2,
             fontSize:11.5, fontFamily:'monospace', textAlign:'right', background:'white', outline:'none' }}
           value={value}
           onChange={e => onChange(e.target.value)}
@@ -1304,7 +1309,7 @@ function AR({ label, value, editable, onChange, highlight }) {
         />
       ) : (
         <span style={{ fontFamily:'monospace', fontWeight:highlight?700:600,
-          color:highlight?'#1f65de':'#1a2b4a', fontSize:highlight?13:12 }}>
+          color:highlight?'#16a34a':'#0f172a', fontSize:highlight?13:12 }}>
           {value}
         </span>
       )}
@@ -1314,7 +1319,7 @@ function AR({ label, value, editable, onChange, highlight }) {
 
 // Table header / data cell base styles
 const TH = {
-  background:'#1f65de', color:'white', padding:'4px 5px', fontWeight:500, fontSize:11,
+  background:'#f8fafc', color:'#334155', padding:'5px 6px', fontWeight:500, fontSize:11,
   textAlign:'center', position:'sticky', top:0, zIndex:2, whiteSpace:'nowrap',
   borderRight:'1px solid rgba(255,255,255,0.12)',
 };

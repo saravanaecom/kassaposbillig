@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "./components/login";
 import Dashboard from "./components/Dashboard";
 import ItemMaster from "./components/Itemmaster";
-
+import { PurchaseMasterPage } from './presentation/pages/PurchaseMasterPage';
 function App() {
   return (
     <BrowserRouter>
@@ -15,6 +15,7 @@ function App() {
 
         {/* Item Master page */}
         <Route path="/itemmaster" element={<ItemMaster />} />
+        <Route path="/PurchaseMasterPage" element={<PurchaseMasterPage />} />
       </Routes>
     </BrowserRouter>
   );
