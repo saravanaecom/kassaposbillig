@@ -1,7 +1,7 @@
 const BASE_URL = 'http://13.200.71.164:9001/api';
 
 const DEFAULT_COMID = '34';
-const DEFAULT_TOKEN = 'eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNhcmF2YW5hMUBnbWFpbC5jb20iLCJ1c2VySWQiOiIxIiwicm9sZSI6IkFkbWluIiwic3ViIjoiMSIsIm5iZiI6MTc3NDI2NjE0NSwiaWF0IjoxNzc0MjY2MTQ1LCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjQ0MzAwLyIsImF1ZCI6InNlY3VyZWFwaXVzZXIiLCJleHAiOjE3NzQzNTI1NDV9.R0Ay8yz5Et-_Xv_r_ogMS0nEI7h9iptzP4r_Q7Iw1qw';
+const DEFAULT_TOKEN = 'eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNhcmF2YW5hMUBnbWFpbC5jb20iLCJ1c2VySWQiOiIxIiwicm9sZSI6IkFkbWluIiwic3ViIjoiMSIsIm5iZiI6MTc3NDM1MjkyNywiaWF0IjoxNzc0MzUyOTI3LCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjQ0MzAwLyIsImF1ZCI6InNlY3VyZWFwaXVzZXIiLCJleHAiOjE3NzQ0MzkzMjd9.CVmq0pRFGbkOGywolIxrWTIykV_9ubkSohyOZqPWxTA';
 
 const getComid  = () => localStorage.getItem('Comid')  || DEFAULT_COMID;
 const getMComid = () => localStorage.getItem('MComid') || localStorage.getItem('Comid') || DEFAULT_COMID;

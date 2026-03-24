@@ -1587,7 +1587,9 @@ ref={setFormRef(6)} data-field="invoiceAmt"
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', borderTop:'1px solid #dde5f5' }}>
               <div style={{ borderRight:'1px solid #dde5f5' }}>
                 <AR label="Gross Amt"   value={totals.grossAmt} />
-                <AR label="Trans Amt"   value={overrides.transAmt} editable onChange={v=>setOverrides(p=>({...p,transAmt:v}))} />
+                <div ref={setFormRef(7)} data-field="transAmt" tabIndex={0} onKeyDown={e => handleFormEnter(e, 7)}>
+                  <AR label="Trans Amt" value={overrides.transAmt} editable onChange={v=>setOverrides(p=>({...p,transAmt:v}))} />
+                </div>
                 <AR label="Display Amt" value={totals.displayAmt} />
               </div>
               <div style={{ borderRight:'1px solid #dde5f5' }}>
@@ -1601,8 +1603,12 @@ ref={setFormRef(6)} data-field="invoiceAmt"
                 <AR label="GST Amt"  value={totals.gstAmt} />
               </div>
               <div>
-                <AR label="Others (+)" value={overrides.otherPlus} editable onChange={v=>setOverrides(p=>({...p,otherPlus:v}))} />
-                <AR label="Others (-)" value={overrides.otherSub}  editable onChange={v=>setOverrides(p=>({...p,otherSub:v}))} />
+                <div ref={setFormRef(8)} data-field="otherPlus" tabIndex={0} onKeyDown={e => handleFormEnter(e, 8)}>
+                  <AR label="Others (+)" value={overrides.otherPlus} editable onChange={v=>setOverrides(p=>({...p,otherPlus:v}))} />
+                </div>
+                <div ref={setFormRef(9)} data-field="otherSub" tabIndex={0} onKeyDown={e => handleFormEnter(e, 9)}>
+                  <AR label="Others (-)" value={overrides.otherSub}  editable onChange={v=>setOverrides(p=>({...p,otherSub:v}))} />
+                </div>
                 <AR label="Net Total"  value={totals.netAmt} highlight />
               </div>
             </div>

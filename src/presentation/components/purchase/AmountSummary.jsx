@@ -20,7 +20,7 @@ function AmtRow({ label, value, editable, onChange, highlight }) {
   );
 }
 
-export function AmountSummary({ totals, overrides, onOverrideChange, header, onHeaderChange }) {
+export function AmountSummary({ totals, overrides, onOverrideChange, header, onHeaderChange, formRefs, setFormRef, handleFormEnter }) {
   return (
     <div className="card" style={{ height: '100%' }}>
       <div className="card-header"><span>💵</span> Amount Summary</div>
