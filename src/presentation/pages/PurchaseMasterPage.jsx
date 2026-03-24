@@ -725,7 +725,8 @@ export function PurchaseMasterPage() {
 };
   // ── Grid items
   const [items, setItems] = useState([newRow()]);
-
+const [formFocusOrder, setFormFocusOrder] = useState([]);
+  const [gridFocusOrder, setGridFocusOrder] = useState(FOCUS_KEYS);
   // ── Override fields
   const [overrides, setOverrides] = useState({
     transAmt: '', otherPlus: '', otherSub: '', tcsPer: '0',
@@ -754,28 +755,80 @@ export function PurchaseMasterPage() {
 
   const formRefs    = useRef([]);
   const setFormRef  = idx => el => { if (el) formRefs.current[idx] = el; };
+const handleFormEnter = useCallback((e, idx) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  e.stopPropagation();
 
-  const handleFormEnter = useCallback((e, idx) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
+  const activeField = formRefs.current[idx]?.dataset.field;
+  if (!activeField) return;
 
+// Build enabled refs array from current config
+  console.log('=== ENTER DIAGNOSIS ===');
+  console.log('formFocusOrder:', formFocusOrder);
+  console.log('formRefs length:', formRefs.current?.length);
+  console.log('formRefs keys:', formRefs.current?.map((r,i) => ({i, key:r?.dataset?.field})));
+  const enabledRefs = formFocusOrder
+    .map(key => formRefs.current.find(ref => ref?.dataset?.field === key))
+    .filter(Boolean);
+  console.log('enabledRefs:', enabledRefs.map(r => r?.dataset?.field));
+  console.log('activeField:', activeField, 'idx:', idx);
 
-      if (idx === 2) {
-    supplierRef.current?.focusSupplier();
+  const currentPos = enabledRefs.findIndex(ref => ref?.contains(document.activeElement) || ref === formRefs.current[idx]);
+  if (currentPos === -1) return;
+  console.log('currentPos:', currentPos, 'enabled length:', enabledRefs.length);
+
+  const nextPos = (currentPos + 1) % enabledRefs.length;
+  const nextRef = enabledRefs[nextPos];
+  console.log('nextPos:', nextPos, 'nextRef field:', nextRef?.dataset?.field);
+
+  // Special routing
+  if (activeField === 'dueDate') {
+    setTimeout(() => supplierRef.current?.focusSupplier?.(), 0);
     return;
   }
-  // Invoice amount → grid
-  if (idx === 6) {
-    focusCell(0, 'Productcode');
+  if (activeField === 'invoiceAmt') {
+    setTimeout(() => focusCell(0, 'Productcode'), 0);
+    return;
+  }
+if (activeField === 'supplier') {
+    setTimeout(() => {
+      const el = formRefs.current[4];
+      if (el) { el.focus(); el.select?.(); }
+    }, 60);
     return;
   }
 
-    const next = formRefs.current[idx + 1];
-    if (next) {
-      next.focus();
-      next.select?.();
-    }
-  }, [focusCell]);
+  // Normal next focus
+  console.log('FOCUSING nextRef:', nextRef);
+  setTimeout(() => {
+    nextRef?.focus();
+    const inp = nextRef?.querySelector('input, select');
+    console.log('Found input:', inp);
+    inp?.select?.();
+  }, 50);
+}, [formFocusOrder, focusCell]);
+  // const handleFormEnter = useCallback((e, idx) => {
+  //   if (e.key !== 'Enter') return;
+  //   e.preventDefault();
+
+
+  //     if (idx === 2) {
+  //   supplierRef.current?.focusSupplier();
+  //   return;
+  // }
+  // // Invoice amount → grid
+  // if (idx === 6) {
+  //   focusCell(0, 'Productcode');
+  //   return;
+  // }
+
+  //   const next = formRefs.current[idx + 1];
+  //   if (next) {
+  //     next.focus();
+  //     next.select?.();
+  //   }
+  // }, [focusCell]);
 
   // Supplier Enter → focus Invoice No (formRefs[4])
   const handleSupplierEnter = useCallback(() => {
@@ -788,6 +841,22 @@ export function PurchaseMasterPage() {
   // ── Computed totals & GST rows
   const totals  = useMemo(() => calcTotals(items, overrides, igst), [items, overrides, igst]);
   const gstRows = useMemo(() => buildGstRows(items, igst),          [items, igst]);
+useEffect(() => {
+  // Load form config
+  const savedForm = JSON.parse(localStorage.getItem("PurchaseFormFocus") || "[]");
+  if (savedForm.length) {
+    const enabledForm = savedForm.filter(s => s.focus).sort((a, b) => a.index - b.index).map(s => s.key);
+    setFormFocusOrder(enabledForm);
+  }
+
+  // Load grid config  
+  const savedGrid = JSON.parse(localStorage.getItem("PurchaseGridFocus") || "[]");
+  if (savedGrid.length) {
+    const enabledGrid = savedGrid.filter(s => s.focus).sort((a, b) => a.index - b.index).map(s => s.key);
+    setGridFocusOrder(enabledGrid);
+  }
+}, []);
+
 
   // ─── Init: load suppliers + purchase no ─────────────────────────────────
   useEffect(() => {
@@ -903,21 +972,45 @@ export function PurchaseMasterPage() {
   }, [applyProduct]);
 
   // ─── Grid cell keyboard handler ──────────────────────────────────────────
-  const handleCellKey = useCallback((e, idx, colKey) => {
+const handleCellKey = useCallback((e, rowIdx, colKey) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (colKey === 'Productcode') { handleProductcodeEnter(idx, items[idx].Productcode); return; }
-    if (colKey === 'ProductName') { setProdModal({ open:true, rowIdx:idx, query: items[idx].ProductName || '' }); return; }
-    const fi = FOCUS_KEYS.indexOf(colKey);
-    if (fi !== -1 && fi < FOCUS_KEYS.length - 1) { focusCell(idx, FOCUS_KEYS[fi + 1]); return; }
-    const nextIdx = idx + 1;
-    if (nextIdx >= items.length) {
-      setItems(p => [...p, newRow()]);
-      setTimeout(() => focusCell(nextIdx, 'Productcode'), 50);
-    } else {
-      focusCell(nextIdx, 'Productcode');
+    e.stopPropagation();
+    console.log('Grid ENTER:', colKey, 'row:', rowIdx);
+    
+    if (colKey === 'Productcode') {
+      const code = items[rowIdx].Productcode?.trim();
+      if (!code) {
+        setProdModal({ open: true, rowIdx, query: '' });
+      } else {
+        handleProductcodeEnter(rowIdx, code);
+      }
+      return;
     }
-  }, [items, handleProductcodeEnter, focusCell]);
+    
+    if (colKey === 'ProductName') {
+      setProdModal({ open: true, rowIdx, query: items[rowIdx].ProductName || '' });
+      return;
+    }
+    
+    // Configured column nav
+    const colPos = gridFocusOrder.indexOf(colKey);
+    console.log('Grid ENTER - colKey:', colKey, 'colPos:', colPos, 'order:', gridFocusOrder);
+    
+    if (colPos !== -1 && colPos < gridFocusOrder.length - 1) {
+      const nextCol = gridFocusOrder[colPos + 1];
+      focusCell(rowIdx, nextCol);
+    } else {
+      // End of config → next row first config OR Productcode
+      const nextRow = rowIdx + 1;
+      if (nextRow >= items.length) {
+        setItems(p => [...p, newRow()]);
+      }
+      const firstCol = gridFocusOrder[0] || 'Productcode';
+      focusCell(nextRow, firstCol);
+    }
+    return;
+  }, [items.length, gridFocusOrder, handleProductcodeEnter, focusCell]);
 
   // ─── Delete row ──────────────────────────────────────────────────────────
   const deleteRow = useCallback(idx => {
@@ -1239,7 +1332,7 @@ export function PurchaseMasterPage() {
               {/* ✅ FIX idx=0: Purchase Date → Enter → Purchase Type */}
               <LF label="Purchase Date">
                 <input
-                  ref={setFormRef(0)}
+ref={setFormRef(0)} data-field="purchaseDate"
                   type="date"
                   style={FS.input}
                   value={purchaseDate}
@@ -1251,7 +1344,7 @@ export function PurchaseMasterPage() {
               {/* ✅ FIX idx=1: Purchase Type → Enter → Due Date */}
               <LF label="Purchase Type">
                 <select
-                  ref={setFormRef(1)}
+ref={setFormRef(1)} data-field="purchaseType"
                   style={FS.select}
                   value={purchaseType}
                   onChange={e => setPurchaseType(e.target.value)}
@@ -1266,7 +1359,7 @@ export function PurchaseMasterPage() {
               {/* ✅ FIX idx=2: Due Date → Enter → Supplier dropdown opens */}
               <LF label="Due Date">
                 <input
-                  ref={setFormRef(2)}
+ref={setFormRef(2)} data-field="dueDate"
                   type="date"
                   style={FS.input}
                   value={dueDate}
@@ -1281,15 +1374,17 @@ export function PurchaseMasterPage() {
           <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:1 }}>
             <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>🏭 Supplier Info</div>
             <div style={{ padding:'10px 12px' }}>
-              <LF label="Supplier Name">
-                {/* ✅ FIX: onEnter → handleSupplierEnter → focuses Invoice No (formRefs[4]) */}
-                <SupplierDropdown
-                  ref={supplierRef}
-                  suppliers={suppliers}
-                  supplierId={supplierId}
-                  onSelect={handleSupplierChange}
-                  onEnter={handleSupplierEnter}
-                />
+<LF label="Supplier Name">
+                <div ref={setFormRef(3)} data-field="supplier" style={{position:'relative'}}>
+                  {/* ✅ FIX: onEnter → handleSupplierEnter → focuses Invoice No (formRefs[4]) */}
+                  <SupplierDropdown
+                    ref={supplierRef}
+                    suppliers={suppliers}
+                    supplierId={supplierId}
+                    onSelect={handleSupplierChange}
+                    onEnter={handleSupplierEnter}
+                  />
+                </div>
               </LF>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 8px', marginTop:4 }}>
                 <LF label="Address">
@@ -1321,7 +1416,7 @@ export function PurchaseMasterPage() {
               {/* ✅ FIX idx=4: Invoice No → Enter → Invoice Date */}
               <LF label="Invoice No">
                 <input
-                  ref={setFormRef(4)}
+ref={setFormRef(4)} data-field="invoiceNo"
                   style={FS.input}
                   value={invoiceNo}
                   onChange={e => setInvoiceNo(e.target.value)}
@@ -1333,7 +1428,7 @@ export function PurchaseMasterPage() {
               {/* ✅ FIX idx=5: Invoice Date → Enter → Invoice Amount */}
               <LF label="Invoice Date">
                 <input
-                  ref={setFormRef(5)}
+ref={setFormRef(5)} data-field="invoiceDate"
                   type="date"
                   style={FS.input}
                   value={invoiceDate}
@@ -1345,7 +1440,7 @@ export function PurchaseMasterPage() {
               {/* ✅ FIX idx=6: Invoice Amount → Enter → Grid row 0 Productcode */}
               <LF label="Invoice Amount">
                 <input
-                  ref={setFormRef(6)}
+ref={setFormRef(6)} data-field="invoiceAmt"
                   style={{ ...FS.input, textAlign:'right', fontFamily:'monospace' }}
                   value={invoiceAmt}
                   onChange={e => setInvoiceAmt(e.target.value)}
@@ -1574,8 +1669,11 @@ export function PurchaseMasterPage() {
         <FocusConfigModal
           type={showFocusConfig}
           onClose={() => setShowFocusConfig(null)}
-          onSave={(config) => {
-            console.log('Focus config saved:', showFocusConfig, config);
+onSave={(config) => {
+            const enabled = config.filter(c => c.focus).sort((a,b)=>a.index-b.index).map(c=>c.key);
+            if(showFocusConfig==='form') setFormFocusOrder(enabled);
+            else setGridFocusOrder(enabled);
+            localStorage.setItem(showFocusConfig==='form'?'PurchaseFormFocus':'PurchaseGridFocus', JSON.stringify(config));
           }}
         />
       )}

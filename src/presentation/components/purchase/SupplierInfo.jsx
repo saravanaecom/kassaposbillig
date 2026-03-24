@@ -69,25 +69,35 @@ export const SupplierInfo = forwardRef(
 
   // Keyboard navigation
   const handleKeyDown = (e) => {
+    console.log('SupplierInfo keydown:', e.key, 'isOpen:', isOpen);
     if (!isOpen) {
-      if (e.key === 'ArrowDown') setIsOpen(true);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setIsOpen(true);
+        setHighlightIndex(0);
+      }
       return;
     }
-    if (e.key === 'ArrowDown') {
-      setHighlightIndex(i => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      setHighlightIndex(i => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
-       if (highlightIndex >= 0) {
-              handleSelect(filtered[highlightIndex]);
+    
+    e.preventDefault();
+    switch (e.key) {
+      case 'ArrowDown':
+        setHighlightIndex(i => Math.min(i + 1, filtered.length - 1));
+        break;
+      case 'ArrowUp':
+        setHighlightIndex(i => Math.max(i - 1, 0));
+        break;
+      case 'Enter':
+        if (highlightIndex >= 0 && filtered[highlightIndex]) {
+          handleSelect(filtered[highlightIndex]);
         }
-
-        onEnter?.();   // 🔥 notify parent
-    } else if (e.key === 'Escape') {
-      setIsOpen(false);
-      isTypingRef.current = false;
-      const current = suppliers.find(s => s.Id === header.supplierId);
-      setInputVal(current ? current.AccountName : '');
+        break;
+      case 'Escape':
+        setIsOpen(false);
+        isTypingRef.current = false;
+        const current = suppliers.find(s => s.Id === header.supplierId);
+        setInputVal(current ? current.AccountName : '');
+        break;
     }
   };
 
