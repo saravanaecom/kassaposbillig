@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { PurchaseApi } from '../../infrastructure/api/PurchaseApi.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8,6 +8,7 @@ const r2  = v => Math.round((parseFloat(v) || 0) * 100) / 100;
 const f2  = v => (parseFloat(v) || 0).toFixed(2);
 const f0  = v => (parseFloat(v) || 0).toFixed(0);
 const today = () => new Date().toISOString().split('T')[0];
+
 const fmtDate = d => {
   if (!d) return '';
   const dt = new Date(d);
@@ -25,7 +26,7 @@ function showToast(msg, type = 'success') {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Calculation logic  (mirrors PurchaseMaster.js Calculation function exactly)
+// Calculation logic
 // ─────────────────────────────────────────────────────────────────────────────
 function calcItem(item, igstBill = false) {
   const rate    = parseFloat(item.PurchaseRate)    || 0;
@@ -138,11 +139,12 @@ function newRow() {
     ProfitPer: '0', ProfitAmt: '0.00',
     SaleDiscountPer: '0', CTAmount: '0.00', STAmount: '0.00',
     ProductTotal: '0.00', BatchNo: '', EditMode: 0,
+    FreeQtyStatus: 0, OldPurchaseRate: '0.00',
   };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Grid columns  (visible ones matching the screenshot)
+// Grid columns
 // ─────────────────────────────────────────────────────────────────────────────
 const COLS = [
   { key: 'Productcode',      label: 'Product Code',  w: 90,  align: 'left',  editable: true,  type: 'code' },
@@ -159,8 +161,45 @@ const COLS = [
   { key: 'SalesRate',        label: 'SaleRate',       w: 78,  align: 'right', editable: true,  type: 'num'  },
 ];
 
-// Tab/Enter focus order within a row
 const FOCUS_KEYS = ['Productcode', 'MRP', 'PurchaseRate', 'ItemQty', 'DiscountPercent', 'TaxPercent', 'SalesRate'];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Focus Config Constants
+// ─────────────────────────────────────────────────────────────────────────────
+const FORM_COLUMNS = [
+  { key: 'purchaseDate',  label: 'Purchase Date' },
+  { key: 'purchaseType',  label: 'Purchase Type' },
+  { key: 'dueDate',       label: 'Due Date' },
+  { key: 'supplier',      label: 'Supplier' },
+  { key: 'invoiceNo',     label: 'Invoice No' },
+  { key: 'invoiceDate',   label: 'Invoice Date' },
+  { key: 'invoiceAmt',    label: 'Invoice Amount' },
+  { key: 'gridPurchase',  label: 'Grid Purchase' },
+  { key: 'otherPlus',     label: 'Others (+)' },
+  { key: 'otherSub',      label: 'Others (-)' },
+  { key: 'remarks',       label: 'Remarks' },
+];
+
+const GRID_COLUMNS_CONFIG = [
+  { key: 'Productcode',     label: 'Product Code' },
+  { key: 'MRP',             label: 'MRP' },
+  { key: 'PurchaseRate',    label: 'Pur.Rate' },
+  { key: 'ItemQty',         label: 'Quantity' },
+  { key: 'DiscountPercent', label: 'Disc(%)' },
+  { key: 'TaxPercent',      label: 'GST(%)' },
+  { key: 'SalesRate',       label: 'Sale Rate' },
+  { key: 'CDPercent',       label: 'C.D(%)' },
+  { key: 'CESSPer',         label: 'CESS(%)' },
+  { key: 'TransPer',        label: 'Trans(%)' },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Form field Enter-nav index map:
+//   0 → purchaseDate    1 → purchaseType    2 → dueDate
+//   3 → supplier (custom — handled via SupplierDropdown onEnter prop)
+//   4 → invoiceNo       5 → invoiceDate     6 → invoiceAmt
+//   idx 6 → special: jumps to grid row 0 Productcode
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Product Search Modal
@@ -172,9 +211,8 @@ function ProductSearchModal({ open, rowIdx, initialQuery, onClose, onSelect }) {
   const [selIdx,  setSelIdx]  = useState(0);
   const inputRef = useRef(null);
   const listRef  = useRef(null);
-  const itemRefs = useRef([]);          // ✅ NEW — normal array ref
+  const itemRefs = useRef([]);
 
-  // Reset & focus when modal opens
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery || '');
@@ -182,7 +220,6 @@ function ProductSearchModal({ open, rowIdx, initialQuery, onClose, onSelect }) {
     setTimeout(() => inputRef.current?.focus(), 60);
   }, [open, initialQuery]);
 
-  // ✅ Modal open aana udane — full list load, query illama
   useEffect(() => {
     if (!open) return;
     setLoading(true);
@@ -194,20 +231,18 @@ function ProductSearchModal({ open, rowIdx, initialQuery, onClose, onSelect }) {
       setList([]);
       setLoading(false);
     });
-  }, [open]);                           // ← open mattum trigger, query illai
+  }, [open]);
 
-  // ✅ Scroll selected into view — itemRefs use pannunga
   useEffect(() => {
     itemRefs.current[selIdx]?.scrollIntoView({ block: 'nearest' });
   }, [selIdx]);
 
-  // ✅ Local filter — API call illai, query type pannapo filter
   const filtered = list.filter(p => {
     if (!query.trim()) return true;
     const q = query.toLowerCase();
     return (
       p.ProductName?.toLowerCase().includes(q) ||
-      p.Productcode?.toLowerCase().includes(q)  // API response la 'Productcode' (lowercase c)
+      p.Productcode?.toLowerCase().includes(q)
     );
   });
 
@@ -251,7 +286,7 @@ function ProductSearchModal({ open, rowIdx, initialQuery, onClose, onSelect }) {
           {!loading && filtered.map((p, i) => (
             <div
               key={p.Id || i}
-              ref={el => itemRefs.current[i] = el}   // ✅ FIX — normal array assign
+              ref={el => itemRefs.current[i] = el}
               onClick={() => onSelect(p, rowIdx)}
               style={{
                 display: 'flex', alignItems: 'center', padding: '4px 0',
@@ -296,7 +331,6 @@ function F5ViewModal({ suppliers, onClose, onEditLoad }) {
     setLoading(false);
   }, [from, to, sid]);
 
-  // auto-load on open
   useEffect(() => { load(); }, []);
 
   return (
@@ -306,7 +340,6 @@ function F5ViewModal({ suppliers, onClose, onEditLoad }) {
           📋 Purchase Details View — F5
           <button onClick={onClose} style={{ marginLeft:'auto', background:'none', border:'none', color:'white', fontSize:18, cursor:'pointer' }}>✕</button>
         </div>
-        {/* Filter bar */}
         <div style={{ padding:'10px 12px', display:'flex', gap:8, alignItems:'flex-end', borderBottom:'1px solid #dde5f5', flexWrap:'wrap' }}>
           <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
             <label style={FS.label}>From Date</label>
@@ -325,7 +358,6 @@ function F5ViewModal({ suppliers, onClose, onEditLoad }) {
           </div>
           <button style={{ ...FS.btnP, height:28 }} onClick={load}>🔍 View</button>
         </div>
-        {/* Table */}
         <div style={{ overflowY:'auto', maxHeight:480 }}>
           {loading && <div style={{ padding:20, textAlign:'center', color:'#888' }}>Loading...</div>}
           {!loading && (
@@ -415,15 +447,8 @@ function ToastHost() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Modal & form shared styles
+// Shared Styles
 // ─────────────────────────────────────────────────────────────────────────────
-const C = {
-  primary:'#2563eb', primaryHov:'#1d4ed8', primarySoft:'#eff6ff', primaryBord:'#bfdbfe',
-  grey50:'#f8fafc', grey100:'#f1f5f9', grey200:'#e2e8f0', grey300:'#cbd5e1',
-  grey400:'#94a3b8', grey500:'#64748b', grey700:'#334155', grey900:'#0f172a',
-  success:'#16a34a', danger:'#dc2626', white:'#ffffff',
-  cardHdr:'linear-gradient(90deg, #2563eb 0%, #60a5fa 100%)',
-};
 const MS = {
   backdrop: { position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:8000, display:'flex', alignItems:'flex-start', justifyContent:'center' },
   box:      { background:'#ffffff', borderRadius:8, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', overflow:'hidden', maxWidth:'96vw' },
@@ -440,11 +465,243 @@ const FS = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Supplier Search Dropdown
+// ✅ FIX: onEnter prop added — called after supplier is selected via Enter key
+// ─────────────────────────────────────────────────────────────────────────────
+const SupplierDropdown = React.forwardRef(
+({ suppliers, supplierId, onSelect, onEnter }, ref) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchVal, setSearchVal] = useState('');
+  const wrapperRef = useRef(null);
+  const searchRef = useRef(null);
+useImperativeHandle(ref, () => ({
+  focus: () => {
+    setIsOpen(true);
+
+    setTimeout(() => {
+      searchRef.current?.focus();
+    }, 0);
+  }
+}));
+  useEffect(() => {
+    if (isOpen && searchRef.current) {
+      searchRef.current.focus();
+      setSearchVal('');
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const handleOutside = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+useImperativeHandle(ref, () => ({
+  focusSupplier() {
+    setIsOpen(true);
+
+    setTimeout(() => {
+      searchRef.current?.focus();
+    }, 40);
+  }
+}));
+  const selectedSupplier = suppliers.find(s => s.Id === supplierId);
+  const filtered = searchVal
+    ? suppliers.filter(s => s.AccountName.toLowerCase().includes(searchVal.toLowerCase()))
+    : suppliers;
+
+  const handleSelect = (supplier) => {
+    setIsOpen(false);
+    setSearchVal('');
+    onSelect(supplier.Id);
+  };
+
+  // ✅ FIX: Enter key in supplier search → select first match → jump to Invoice No
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filtered.length > 0) {
+        handleSelect(filtered[0]);
+        setTimeout(() => onEnter?.(), 50);
+      } else {
+        setIsOpen(false);
+        onEnter?.();
+      }
+    }
+    if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative' }}>
+      <div
+        onClick={() => setIsOpen(o => !o)}
+        style={{
+          height: 26, fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 4,
+          backgroundColor: '#ffffff', padding: '0 24px 0 7px', display: 'flex',
+          alignItems: 'center', cursor: 'pointer',
+          color: selectedSupplier ? '#0f172a' : '#94a3b8',
+          position: 'relative', userSelect: 'none', width: '100%', boxSizing: 'border-box',
+        }}
+      >
+        {selectedSupplier ? selectedSupplier.AccountName : 'Select SupplierName'}
+        <span style={{ position: 'absolute', right: 7, color: '#64748b', fontSize: 10 }}>▼</span>
+      </div>
+      {isOpen && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0,
+          backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: 4,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 9999,
+        }}>
+          <div style={{ padding: '5px 6px', borderBottom: '1px solid #e2e8f0' }}>
+            <input
+              ref={searchRef}
+              type="text"
+              value={searchVal}
+              onChange={e => setSearchVal(e.target.value)}
+              placeholder="🔍 Search supplier..."
+              autoComplete="off"
+              onKeyDown={handleSearchKeyDown}
+              style={{
+                width: '100%', height: 24, fontSize: 12, border: '1px solid #cbd5e1',
+                borderRadius: 3, padding: '0 7px', outline: 'none',
+                boxSizing: 'border-box', fontFamily: 'inherit',
+              }}
+            />
+          </div>
+          <ul style={{ maxHeight: 180, overflowY: 'auto', margin: 0, padding: 0, listStyle: 'none' }}>
+            {filtered.length === 0 ? (
+              <li style={{ padding: '6px 10px', color: '#94a3b8', fontSize: 12 }}>No suppliers found</li>
+            ) : (
+              filtered.map(s => (
+                <li
+                  key={s.Id}
+                  onMouseDown={() => handleSelect(s)}
+                  style={{
+                    padding: '5px 10px', fontSize: 12, cursor: 'pointer',
+                    backgroundColor: s.Id === supplierId ? '#e2e8f0' : 'white', color: '#0f172a',
+                  }}
+                  onMouseEnter={e => { if (s.Id !== supplierId) e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
+                  onMouseLeave={e => { if (s.Id !== supplierId) e.currentTarget.style.backgroundColor = 'white'; }}
+                >
+                  {s.AccountName}
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Focus Config Modal (Ctrl+F = form, Ctrl+G = grid)
+// ─────────────────────────────────────────────────────────────────────────────
+function FocusConfigModal({ type, onClose, onSave }) {
+  const defaultCols = type === 'form' ? FORM_COLUMNS : GRID_COLUMNS_CONFIG;
+  const storageKey  = type === 'form' ? 'PurchaseFormFocus' : 'PurchaseGridFocus';
+
+  const [cols, setCols] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      if (saved.length) {
+        const merged = saved
+          .map(s => ({ ...defaultCols.find(d => d.key === s.key), focus: s.focus }))
+          .filter(Boolean);
+        defaultCols.forEach(d => {
+          if (!merged.find(m => m.key === d.key)) merged.push({ ...d, focus: true });
+        });
+        return merged;
+      }
+    } catch {}
+    return defaultCols.map(c => ({ ...c, focus: true }));
+  });
+
+  const [dragIdx, setDragIdx] = useState(null);
+
+  const toggleFocus = (idx) => {
+    setCols(prev => prev.map((c, i) => i === idx ? { ...c, focus: !c.focus } : c));
+  };
+
+  const handleDrop = (idx) => {
+    if (dragIdx === null || dragIdx === idx) return;
+    setCols(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(dragIdx, 1);
+      next.splice(idx, 0, moved);
+      return next;
+    });
+    setDragIdx(null);
+  };
+
+  const handleSave = () => {
+    const toSave = cols.map((c, i) => ({ key: c.key, focus: c.focus, index: i }));
+    localStorage.setItem(storageKey, JSON.stringify(toSave));
+    onSave(toSave);
+    onClose();
+    showToast(`${type === 'form' ? 'Form' : 'Grid'} focus order saved!`, 'success');
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+      zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center'
+    }}>
+      <div style={{ background: 'white', borderRadius: 6, width: 300, boxShadow: '0 8px 32px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+        <div style={{
+          background: '#2563eb', color: 'white', padding: '8px 12px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          fontSize: 13, fontWeight: 600
+        }}>
+          {type === 'form' ? '⌨️ Form Focus Order (Ctrl+F)' : '⌨️ Grid Focus Order (Ctrl+G)'}
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'white', fontSize: 16, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+        </div>
+        <div style={{ padding: '6px 12px', fontSize: 11, color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>
+          Drag to reorder • Checkbox to enable/disable focus
+        </div>
+        <div style={{ maxHeight: 380, overflowY: 'auto', padding: '4px 0' }}>
+          {cols.map((col, idx) => (
+            <div
+              key={col.key}
+              draggable
+              onDragStart={() => setDragIdx(idx)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={() => handleDrop(idx)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 12px', cursor: 'grab',
+                background: dragIdx === idx ? '#eff6ff' : 'white',
+                borderBottom: '1px solid #f1f5f9', fontSize: 12,
+              }}
+            >
+              <span style={{ color: '#94a3b8', fontSize: 11 }}>⠿</span>
+              <input type="checkbox" checked={col.focus} onChange={() => toggleFocus(idx)} style={{ cursor: 'pointer' }} />
+              <span style={{ color: col.focus ? '#0f172a' : '#94a3b8' }}>
+                {idx + 1}. {col.label}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '8px 12px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{ ...FS.btnSec, height: 28, fontSize: 11, padding: '0 12px' }}>Cancel</button>
+          <button onClick={handleSave} style={{ ...FS.btnP, height: 28, fontSize: 11, padding: '0 12px' }}>💾 Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Page Component
 // ─────────────────────────────────────────────────────────────────────────────
 export function PurchaseMasterPage() {
   // ── Master data
-  const [suppliers,  setSuppliers]  = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
   // ── Header fields
   const [purchaseNo,   setPurchaseNo]   = useState('');
@@ -462,11 +719,14 @@ export function PurchaseMasterPage() {
   const [igst,        setIgst]        = useState(false);
   const [taxMode,     setTaxMode]     = useState('exclusive');
   const [remarks,     setRemarks]     = useState('');
-
+  const supplierRef = useRef(null);
+  const handleDueDateEnter = () => {
+  supplierRef.current?.focus();
+};
   // ── Grid items
   const [items, setItems] = useState([newRow()]);
 
-  // ── Override fields (user-editable)
+  // ── Override fields
   const [overrides, setOverrides] = useState({
     transAmt: '', otherPlus: '', otherSub: '', tcsPer: '0',
   });
@@ -476,12 +736,13 @@ export function PurchaseMasterPage() {
   const [editId,   setEditId]   = useState(0);
 
   // ── UI state
-  const [loading,    setLoading]    = useState(false);
-  const [confirmDlg, setConfirmDlg] = useState(null);
-  const [prodModal,  setProdModal]  = useState({ open:false, rowIdx:0, query:'' });
-  const [showF5,     setShowF5]     = useState(false);
+  const [loading,         setLoading]         = useState(false);
+  const [confirmDlg,      setConfirmDlg]      = useState(null);
+  const [prodModal,       setProdModal]       = useState({ open:false, rowIdx:0, query:'' });
+  const [showF5,          setShowF5]          = useState(false);
+  const [showFocusConfig, setShowFocusConfig] = useState(null);
 
-  // ── Cell refs for programmatic focus
+  // ── Grid cell refs
   const cellRefs = useRef({});
   const setRef   = (row, col) => el => { if (el) cellRefs.current[`${row}_${col}`] = el; };
   const focusCell = useCallback((row, col) => {
@@ -489,6 +750,39 @@ export function PurchaseMasterPage() {
       const el = cellRefs.current[`${row}_${col}`];
       if (el) { el.focus(); el.select?.(); }
     }, 40);
+  }, []);
+
+  const formRefs    = useRef([]);
+  const setFormRef  = idx => el => { if (el) formRefs.current[idx] = el; };
+
+  const handleFormEnter = useCallback((e, idx) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+
+
+      if (idx === 2) {
+    supplierRef.current?.focusSupplier();
+    return;
+  }
+  // Invoice amount → grid
+  if (idx === 6) {
+    focusCell(0, 'Productcode');
+    return;
+  }
+
+    const next = formRefs.current[idx + 1];
+    if (next) {
+      next.focus();
+      next.select?.();
+    }
+  }, [focusCell]);
+
+  // Supplier Enter → focus Invoice No (formRefs[4])
+  const handleSupplierEnter = useCallback(() => {
+    setTimeout(() => {
+      const el = formRefs.current[4];
+      if (el) { el.focus(); el.select?.(); }
+    }, 60);
   }, []);
 
   // ── Computed totals & GST rows
@@ -499,8 +793,6 @@ export function PurchaseMasterPage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-
-      // Supplier load — separate try/catch
       try {
         const sRes = await PurchaseApi.getSuppliers();
         console.log('Supplier response:', sRes);
@@ -508,17 +800,13 @@ export function PurchaseMasterPage() {
         else showToast('Supplier load failed', 'error');
       } catch (e) {
         showToast('Supplier error: ' + e.message, 'error');
-        console.error('Supplier error:', e);
       }
-
-      // Purchase No load — separate try/catch
       try {
         const noRes = await PurchaseApi.getNextPurchaseNo();
         if (noRes.ok) setPurchaseNo(noRes.purchaseNo);
       } catch (e) {
         console.error('PurchaseNo error:', e);
       }
-
       setLoading(false);
     })();
   }, []);
@@ -533,21 +821,17 @@ export function PurchaseMasterPage() {
     }
     const s = suppliers.find(x => x.Id === id);
     if (!s) return;
-
     const info = {
-      Address:      [s.Address1, s.Address2].filter(Boolean).join(', '),
-      City:         s.City         || '',
-      ContactNo:    s.MobileNo     || '',
-      Balance:      0,
-      CurrentStock: 0,
-      IGSTBill:     s.IGSTBill     || 'GST',
-      CreditDays:   s.CreditBillDays || 0,
+      Address:    [s.Address1, s.Address2].filter(Boolean).join(', '),
+      City:       s.City         || '',
+      ContactNo:  s.MobileNo     || '',
+      Balance:    0, CurrentStock: 0,
+      IGSTBill:   s.IGSTBill     || 'GST',
+      CreditDays: s.CreditBillDays || 0,
     };
     setSupInfo(info);
     setDueDate(addDays(purchaseDate, info.CreditDays));
     setIgst(info.IGSTBill === 'IGST' || info.IGSTBill === 'UGST');
-
-    // Async: load balance
     try {
       const br = await PurchaseApi.getSupplierBalance(id, purchaseDate);
       if (br.ok) setSupInfo(p => ({ ...p, Balance: parseFloat(br.data) || 0 }));
@@ -579,6 +863,7 @@ export function PurchaseMasterPage() {
         UOMDecimal:      p.UOMDecimal      || 2,
         MRP:             f2(p.MRP          || 0),
         PurchaseRate:    f2(p.PurchaseRate || 0),
+        OldPurchaseRate: f2(p.PurchaseRate || 0),
         StockQty:        f2(p.Stock        || 0),
         ItemQty:         '1',
         TaxPercent:      f2(p.GST          || 0),
@@ -592,41 +877,28 @@ export function PurchaseMasterPage() {
         CDPercent: '0', CDAmount: '0.00',
         DiscountPercent: '0', DiscountAmt: '0.00',
         TransPer: '0', TransAmt: '0.00',
+        FreeQtyStatus: 0,
         EditMode: 1,
       };
       next[rowIdx] = calcItem(base, igst);
-
-      // Auto-add empty row when filling the last row
       if (rowIdx === next.length - 1) next.push(newRow());
       return next;
     });
-
     setProdModal({ open:false, rowIdx:0, query:'' });
-    // Focus next editable cell: ItemQty
     focusCell(rowIdx, 'ItemQty');
   }, [igst, focusCell]);
 
-  // ─── Productcode Enter: lookup then modal ────────────────────────────────
+  // ─── Productcode Enter ───────────────────────────────────────────────────
   const handleProductcodeEnter = useCallback(async (idx, code) => {
     const trimmed = code.trim();
-    if (!trimmed) {
-      // Empty → open modal with blank search
-      setProdModal({ open:true, rowIdx:idx, query:'' });
-      return;
-    }
+    if (!trimmed) { setProdModal({ open:true, rowIdx:idx, query:'' }); return; }
     setLoading(true);
     try {
       const r = await PurchaseApi.getProductByCode(trimmed);
       const data = r.data || [];
-      if (data.length === 1) {
-        applyProduct(data[0], idx);
-      } else {
-        // 0 results or multiple → open modal pre-filled
-        setProdModal({ open:true, rowIdx:idx, query: trimmed });
-      }
-    } catch {
-      setProdModal({ open:true, rowIdx:idx, query: trimmed });
-    }
+      if (data.length === 1) { applyProduct(data[0], idx); }
+      else { setProdModal({ open:true, rowIdx:idx, query: trimmed }); }
+    } catch { setProdModal({ open:true, rowIdx:idx, query: trimmed }); }
     setLoading(false);
   }, [applyProduct]);
 
@@ -634,24 +906,10 @@ export function PurchaseMasterPage() {
   const handleCellKey = useCallback((e, idx, colKey) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-
-    if (colKey === 'Productcode') {
-      handleProductcodeEnter(idx, items[idx].Productcode);
-      return;
-    }
-    if (colKey === 'ProductName') {
-      setProdModal({ open:true, rowIdx:idx, query: items[idx].ProductName || '' });
-      return;
-    }
-
-    // Navigate: find next focusable column
+    if (colKey === 'Productcode') { handleProductcodeEnter(idx, items[idx].Productcode); return; }
+    if (colKey === 'ProductName') { setProdModal({ open:true, rowIdx:idx, query: items[idx].ProductName || '' }); return; }
     const fi = FOCUS_KEYS.indexOf(colKey);
-    if (fi !== -1 && fi < FOCUS_KEYS.length - 1) {
-      focusCell(idx, FOCUS_KEYS[fi + 1]);
-      return;
-    }
-
-    // Last column → next row Productcode
+    if (fi !== -1 && fi < FOCUS_KEYS.length - 1) { focusCell(idx, FOCUS_KEYS[fi + 1]); return; }
     const nextIdx = idx + 1;
     if (nextIdx >= items.length) {
       setItems(p => [...p, newRow()]);
@@ -678,10 +936,8 @@ export function PurchaseMasterPage() {
     if (parseFloat(invoiceAmt) > 0 && parseFloat(invoiceAmt) !== parseFloat(totals.netAmt)) {
       showToast('Invoice Amount ≠ Net Total — confirm pannunga!', 'warn');
     }
-
-    const sup    = suppliers.find(s => s.Id === supplierId) || {};
-    const purType= purchaseType === 'CASH' ? 'CA' : 'CR';
-
+    const sup     = suppliers.find(s => s.Id === supplierId) || {};
+    const purType = purchaseType === 'CASH' ? 'CA' : 'CR';
     const payload = [{
       Id:                  editMode ? editId : 0,
       SupplierRefId:       supplierId,
@@ -763,7 +1019,6 @@ export function PurchaseMasterPage() {
       StockDetails:   [],
       SerialNoDetails:[],
     }];
-
     setLoading(true);
     try {
       const r = await PurchaseApi.savePurchase(payload);
@@ -801,7 +1056,6 @@ export function PurchaseMasterPage() {
       const r = await PurchaseApi.getPurchaseById(id);
       const d = r.Data?.[0] || r.data?.[0] || r;
       if (!d?.PurchaseNo) { showToast('Record not found', 'error'); setLoading(false); return; }
-
       setPurchaseNo(d.PurchaseNo);
       setPurchaseDate(d.PurchaseDate?.split('T')[0] || today());
       setDueDate(d.DueDate?.split('T')[0] || today());
@@ -819,7 +1073,6 @@ export function PurchaseMasterPage() {
         otherSub:  f2(d.Others_D       || 0),
         tcsPer:    '0',
       });
-
       const rows = (d.PurchaseDetails || []).map(p => {
         const base = {
           _id: `row_${++rowCounter}`,
@@ -832,6 +1085,7 @@ export function PurchaseMasterPage() {
           UOMDecimal:      p.UOMDecimal     || 2,
           MRP:             f2(p.MRP         || 0),
           PurchaseRate:    f2(p.PurchaseRate|| 0),
+          OldPurchaseRate: f2(p.PurchaseRate|| 0),
           StockQty:        f2(p.StockQty    || 0),
           ItemQty:         f2(p.ItemQty     || 0),
           FreeQty:         f2(p.FreeQty     || 0),
@@ -856,11 +1110,11 @@ export function PurchaseMasterPage() {
           STAmount:        f2(p.STAmount    || 0),
           ProductTotal:    f2(p.ProductTotal|| p.Amount || 0),
           BatchNo:         p.BatchNo        || '',
+          FreeQtyStatus:   0,
           EditMode:        0,
         };
         return calcItem(base, isIgst);
       });
-
       setItems([...rows, newRow()]);
       setEditMode(true);
       setEditId(id);
@@ -884,18 +1138,66 @@ export function PurchaseMasterPage() {
     } catch {}
   }, []);
 
-  // ─── Global keyboard shortcuts ───────────────────────────────────────────
+  // ─── Keyboard Shortcuts ───────────────────────────────────────────────────
   useEffect(() => {
-    const onKey = e => {
-      if (prodModal.open || confirmDlg || showF5) return; // modals eat shortcuts
-      if (e.key === 'F1') { e.preventDefault(); handleSave(); }
-      if (e.key === 'F5') { e.preventDefault(); setShowF5(true); }
-      if (e.key === 'F9') { e.preventDefault(); handleDelete(); }
-      if (e.key === 'Escape') { e.preventDefault(); handleClear(); }
+    const handleKeyDown = (e) => {
+      const anyModalOpen = prodModal.open || showF5 || showFocusConfig || confirmDlg;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (prodModal.open)   { setProdModal({ open:false, rowIdx:0, query:'' }); return; }
+        if (showFocusConfig)  { setShowFocusConfig(null); return; }
+        if (showF5)           { setShowF5(false); return; }
+        if (confirmDlg)       { setConfirmDlg(null); return; }
+        setConfirmDlg({
+          msg: 'Do you want to quit?',
+          onYes: () => { window.location.href = '/Home'; },
+        });
+        return;
+      }
+
+      if (anyModalOpen) return;
+
+      if (e.key === 'F1') { e.preventDefault(); handleSave(); return; }
+
+      if (e.key === 'F2') {
+        e.preventDefault();
+        setItems(prev => {
+          if (!prev.length) return prev;
+          const reversedIdx = [...prev].reverse().findIndex(r => r.Productcode);
+          if (reversedIdx === -1) { showToast('Select a product row!', 'warn'); return prev; }
+          const idx = prev.length - 1 - reversedIdx;
+          const next = [...prev];
+          const row = { ...next[idx] };
+          if (!row.ProductRefId) { showToast('Invalid row!', 'warn'); return prev; }
+          const isFree = row.FreeQtyStatus === 1;
+          if (isFree) {
+            row.FreeQtyStatus = 0;
+            row.PurchaseRate = row.OldPurchaseRate || row.PurchaseRate;
+          } else {
+            row.FreeQtyStatus = 1;
+            row.OldPurchaseRate = row.PurchaseRate;
+            row.PurchaseRate = '0.00';
+            row.CDPercent = '0'; row.CDAmount = '0.00';
+            row.DiscountPercent = '0'; row.DiscountAmt = '0.00';
+            row.CESSPer = '0'; row.CESSAmount = '0.00';
+            row.Amount = '0.00';
+          }
+          next[idx] = calcItem(row, igst);
+          return next;
+        });
+        return;
+      }
+
+      if (e.key === 'F5') { e.preventDefault(); setShowF5(true); return; }
+      if (e.key === 'F9') { e.preventDefault(); handleDelete(); return; }
+      if (e.ctrlKey && e.key === 'f') { e.preventDefault(); setShowFocusConfig('form'); return; }
+      if (e.ctrlKey && e.key === 'g') { e.preventDefault(); setShowFocusConfig('grid'); return; }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [prodModal.open, confirmDlg, showF5, handleSave, handleDelete, handleClear]);
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [prodModal, showF5, showFocusConfig, confirmDlg, handleSave, handleDelete, igst]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -911,9 +1213,7 @@ export function PurchaseMasterPage() {
         <span style={{ fontSize:12.5, color:'#64748b' }}>{localStorage.getItem('CompanyName') || 'KASSAPOS SOFTWARE SOLUTIONS'}</span>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
           <span style={{ fontSize:12, color:'#64748b' }}>Bill Amount:</span>
-          <span style={{ fontWeight:700, fontSize:14, fontFamily:'monospace', color:'#16a34a' }}>
-            Rs.{totals.netAmt}
-          </span>
+          <span style={{ fontWeight:700, fontSize:14, fontFamily:'monospace', color:'#16a34a' }}>Rs.{totals.netAmt}</span>
           {editMode && (
             <span style={{ background:'#fef9c3', border:'1px solid #fde047', padding:'2px 9px', borderRadius:4, fontSize:11.5, color:'#854d0e', fontWeight:600 }}>
               ✏️ EDIT MODE
@@ -929,38 +1229,67 @@ export function PurchaseMasterPage() {
         <div style={{ display:'flex', gap:6 }}>
 
           {/* Purchase Info */}
-          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 310px',  }}>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 310px' }}>
             <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>📋 Purchase Info</div>
             <div style={{ padding:'10px 12px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'5px 8px' }}>
               <LF label="Purchase No">
                 <input style={FS.inputRO} value={purchaseNo} readOnly />
               </LF>
+
+              {/* ✅ FIX idx=0: Purchase Date → Enter → Purchase Type */}
               <LF label="Purchase Date">
-                <input type="date" style={FS.input} value={purchaseDate}
-                  onChange={e => { setPurchaseDate(e.target.value); setDueDate(addDays(e.target.value, supInfo.CreditDays)); }} />
+                <input
+                  ref={setFormRef(0)}
+                  type="date"
+                  style={FS.input}
+                  value={purchaseDate}
+                  onChange={e => { setPurchaseDate(e.target.value); setDueDate(addDays(e.target.value, supInfo.CreditDays)); }}
+                  onKeyDown={e => handleFormEnter(e, 0)}
+                />
               </LF>
+
+              {/* ✅ FIX idx=1: Purchase Type → Enter → Due Date */}
               <LF label="Purchase Type">
-                <select style={FS.select} value={purchaseType} onChange={e => setPurchaseType(e.target.value)}>
+                <select
+                  ref={setFormRef(1)}
+                  style={FS.select}
+                  value={purchaseType}
+                  onChange={e => setPurchaseType(e.target.value)}
+                  onKeyDown={e => handleFormEnter(e, 1)}
+                >
                   <option value="CREDIT">CREDIT</option>
                   <option value="CASH">CASH</option>
                   <option value="IMPORT">IMPORT</option>
                 </select>
               </LF>
+
+              {/* ✅ FIX idx=2: Due Date → Enter → Supplier dropdown opens */}
               <LF label="Due Date">
-                <input type="date" style={FS.input} value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                <input
+                  ref={setFormRef(2)}
+                  type="date"
+                  style={FS.input}
+                  value={dueDate}
+                  onChange={e => setDueDate(e.target.value)}
+                  onKeyDown={e => handleFormEnter(e, 2)}
+                />
               </LF>
             </div>
           </div>
 
           {/* Supplier Info */}
-          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:1,  }}>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:1 }}>
             <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>🏭 Supplier Info</div>
             <div style={{ padding:'10px 12px' }}>
               <LF label="Supplier Name">
-                <select style={{ ...FS.select, width:'100%', height:28 }} value={supplierId} onChange={e => handleSupplierChange(e.target.value)}>
-                  <option value={0}>Select SupplierName</option>
-                  {suppliers.map(s => <option key={s.Id} value={s.Id}>{s.AccountName}</option>)}
-                </select>
+                {/* ✅ FIX: onEnter → handleSupplierEnter → focuses Invoice No (formRefs[4]) */}
+                <SupplierDropdown
+                  ref={supplierRef}
+                  suppliers={suppliers}
+                  supplierId={supplierId}
+                  onSelect={handleSupplierChange}
+                  onEnter={handleSupplierEnter}
+                />
               </LF>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 8px', marginTop:4 }}>
                 <LF label="Address">
@@ -980,40 +1309,62 @@ export function PurchaseMasterPage() {
             </div>
           </div>
 
-          {/* Invoice + Bill Amount */}
-          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 270px',  }}>
+          {/* Invoice Info */}
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 270px' }}>
             <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>🧾 Invoice Info</div>
             <div style={{ padding:'10px 12px', display:'flex', flexDirection:'column', gap:5 }}>
-              {/* Bill amount display */}
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'#e8f0fd', borderRadius:4, padding:'4px 8px', marginBottom:2 }}>
                 <span style={{ fontSize:11.5, color:'#1750b8', fontWeight:600 }}>Bill Amount</span>
                 <span style={{ fontFamily:'monospace', fontWeight:700, fontSize:14, color:'#16a34a' }}>Rs.{totals.netAmt}</span>
               </div>
+
+              {/* ✅ FIX idx=4: Invoice No → Enter → Invoice Date */}
               <LF label="Invoice No">
-                <input style={FS.input} value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} placeholder="Supplier Invoice No" />
+                <input
+                  ref={setFormRef(4)}
+                  style={FS.input}
+                  value={invoiceNo}
+                  onChange={e => setInvoiceNo(e.target.value)}
+                  onKeyDown={e => handleFormEnter(e, 4)}
+                  placeholder="Supplier Invoice No"
+                />
               </LF>
+
+              {/* ✅ FIX idx=5: Invoice Date → Enter → Invoice Amount */}
               <LF label="Invoice Date">
-                <input type="date" style={FS.input} value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
+                <input
+                  ref={setFormRef(5)}
+                  type="date"
+                  style={FS.input}
+                  value={invoiceDate}
+                  onChange={e => setInvoiceDate(e.target.value)}
+                  onKeyDown={e => handleFormEnter(e, 5)}
+                />
               </LF>
+
+              {/* ✅ FIX idx=6: Invoice Amount → Enter → Grid row 0 Productcode */}
               <LF label="Invoice Amount">
-                <input style={{ ...FS.input, textAlign:'right', fontFamily:'monospace' }}
-                  value={invoiceAmt} onChange={e => setInvoiceAmt(e.target.value)} placeholder="0.00" />
+                <input
+                  ref={setFormRef(6)}
+                  style={{ ...FS.input, textAlign:'right', fontFamily:'monospace' }}
+                  value={invoiceAmt}
+                  onChange={e => setInvoiceAmt(e.target.value)}
+                  onKeyDown={e => handleFormEnter(e, 6)}
+                  placeholder="0.00"
+                />
               </LF>
             </div>
           </div>
         </div>
 
         {/* ── PRODUCT GRID ── */}
-        <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6,  }}>
-          {/* Grid header */}
+        <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6 }}>
           <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb', display:'flex', alignItems:'center', gap:10 }}>
             📦 Products
             <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
               {['exclusive','inclusive'].map(m => (
-                <label key={m} style={{ display:'flex', alignItems:'center', gap:3, cursor:'pointer', fontSize:11.5,
-                  color: taxMode===m ? 'white' : 'rgba(255,255,255,0.6)' }}>
-                  <input type="radio" name="taxMode" value={m} checked={taxMode===m}
-                    onChange={() => setTaxMode(m)} style={{ accentColor:'white' }} />
+                <label key={m} style={{ display:'flex', alignItems:'center', gap:3, cursor:'pointer', fontSize:11.5, color: taxMode===m ? 'white' : 'rgba(255,255,255,0.6)' }}>
+                  <input type="radio" name="taxMode" value={m} checked={taxMode===m} onChange={() => setTaxMode(m)} style={{ accentColor:'white' }} />
                   {m.charAt(0).toUpperCase()+m.slice(1)}
                 </label>
               ))}
@@ -1026,8 +1377,6 @@ export function PurchaseMasterPage() {
               </span>
             </div>
           </div>
-
-          {/* Table */}
           <div style={{ overflow:'auto', maxHeight:255 }}>
             <table style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed' }}>
               <colgroup>
@@ -1044,9 +1393,8 @@ export function PurchaseMasterPage() {
               </thead>
               <tbody>
                 {items.map((item, idx) => (
-                  <tr key={item._id} style={{ background:item.EditMode?'#f0fdf4':'#ffffff', borderBottom:'1px solid #f0f4ff' }}>
+                  <tr key={item._id} style={{ background:item.FreeQtyStatus===1?'#fef9c3':item.EditMode?'#f0fdf4':'#ffffff', borderBottom:'1px solid #f0f4ff' }}>
                     <td style={{ ...TD, textAlign:'center', color:'#8099be', fontSize:11 }}>{idx+1}</td>
-
                     {COLS.map(col => (
                       <td key={col.key} style={{ ...TD, padding:'1px 3px' }}>
                         {col.editable ? (
@@ -1057,18 +1405,8 @@ export function PurchaseMasterPage() {
                               textAlign: col.align, fontFamily: col.align==='left' ? 'inherit' : 'monospace',
                               background:'white', color:'#1a2b4a' }}
                             value={item[col.key] ?? ''}
-                            onFocus={e => {
-                              e.target.select();
-                              e.target.style.borderColor = '#2563eb';
-                              e.target.style.boxShadow  = '0 0 0 2px rgba(37,99,235,0.15)';
-                            }}
-                            onBlur={e => {
-                              e.target.style.borderColor = '#dde5f5';
-                              e.target.style.boxShadow  = 'none';
-                              if (col.type === 'num') {
-                                handleItemChange(idx, col.key, e.target.value);
-                              }
-                            }}
+                            onFocus={e => { e.target.select(); e.target.style.borderColor='#2563eb'; e.target.style.boxShadow='0 0 0 2px rgba(37,99,235,0.15)'; }}
+                            onBlur={e => { e.target.style.borderColor='#dde5f5'; e.target.style.boxShadow='none'; if (col.type === 'num') handleItemChange(idx, col.key, e.target.value); }}
                             onChange={e => handleItemChange(idx, col.key, e.target.value)}
                             onKeyDown={e => handleCellKey(e, idx, col.key)}
                           />
@@ -1079,7 +1417,6 @@ export function PurchaseMasterPage() {
                         )}
                       </td>
                     ))}
-
                     <td style={{ ...TD, textAlign:'center' }}>
                       <button onClick={() => deleteRow(idx)}
                         style={{ background:'none', border:'none', color:'#dc2626', cursor:'pointer', fontSize:13, lineHeight:1, opacity:0.7, padding:'1px 4px' }}
@@ -1090,8 +1427,6 @@ export function PurchaseMasterPage() {
               </tbody>
             </table>
           </div>
-
-          {/* Grid footer */}
           <div style={{ padding:'5px 8px', display:'flex', alignItems:'center', gap:8, borderTop:'1px solid #e2e8f0', background:'#f8fafc' }}>
             <button
               style={{ background:'#eff6ff', border:'1px dashed #2563eb', color:'#2563eb', borderRadius:3, padding:'3px 10px', fontSize:11.5, cursor:'pointer', fontWeight:600 }}
@@ -1104,20 +1439,16 @@ export function PurchaseMasterPage() {
               🔍 Search Product
             </button>
             <span style={{ marginLeft:'auto', fontSize:11, color:'#8099be' }}>
-              {items.filter(i=>i.Productcode).length} item(s) &nbsp;|&nbsp;
-              Go to page: 1 &nbsp; Show rows: 15 &nbsp; {items.filter(i=>i.Productcode).length}-{items.filter(i=>i.Productcode).length} of {items.filter(i=>i.Productcode).length}
+              {items.filter(i=>i.Productcode).length} item(s)
             </span>
           </div>
         </div>
 
         {/* ── BOTTOM: GST Summary | Amount Summary ── */}
         <div style={{ display:'flex', gap:6, alignItems:'flex-start' }}>
-
-          {/* Left: Remarks + GST */}
-          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 330px',  }}>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:'0 0 330px' }}>
             <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>📊 GST Summary</div>
             <div style={{ padding:'6px 8px' }}>
-              {/* Tax mode badges + remarks */}
               <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:6 }}>
                 <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:12, cursor:'pointer' }}>
                   <input type="radio" name="taxMode2" value="exclusive" checked={taxMode==='exclusive'} onChange={()=>setTaxMode('exclusive')} style={{ accentColor:'#2563eb' }} />
@@ -1130,8 +1461,6 @@ export function PurchaseMasterPage() {
               </div>
               <input style={{ ...FS.input, width:'100%', textTransform:'uppercase', marginBottom:6 }}
                 placeholder="Remarks..." value={remarks} onChange={e=>setRemarks(e.target.value.toUpperCase())} />
-
-              {/* GST table */}
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
                 <thead>
                   <tr style={{ background:'#f8fafc', color:'#334155' }}>
@@ -1158,33 +1487,24 @@ export function PurchaseMasterPage() {
             </div>
           </div>
 
-          {/* Right: Amount Summary */}
-          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:1,  }}>
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:1 }}>
             <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>💵 Amount Summary</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', borderTop:'1px solid #dde5f5' }}>
-
-              {/* Col 1 */}
               <div style={{ borderRight:'1px solid #dde5f5' }}>
                 <AR label="Gross Amt"   value={totals.grossAmt} />
-                <AR label="Trans Amt"   value={overrides.transAmt}  editable onChange={v=>setOverrides(p=>({...p,transAmt:v}))} />
+                <AR label="Trans Amt"   value={overrides.transAmt} editable onChange={v=>setOverrides(p=>({...p,transAmt:v}))} />
                 <AR label="Display Amt" value={totals.displayAmt} />
               </div>
-
-              {/* Col 2 */}
               <div style={{ borderRight:'1px solid #dde5f5' }}>
                 <AR label="CD Amt"   value={totals.cdAmt} />
                 <AR label="Disc Amt" value={totals.discAmt} />
                 <AR label="CESS Amt" value={totals.cessAmt} />
               </div>
-
-              {/* Col 3 */}
               <div style={{ borderRight:'1px solid #dde5f5' }}>
                 <AR label="CGST Amt" value={igst?'0.00':totals.cgstAmt} />
                 <AR label="SGST Amt" value={igst?'0.00':totals.sgstAmt} />
                 <AR label="GST Amt"  value={totals.gstAmt} />
               </div>
-
-              {/* Col 4 */}
               <div>
                 <AR label="Others (+)" value={overrides.otherPlus} editable onChange={v=>setOverrides(p=>({...p,otherPlus:v}))} />
                 <AR label="Others (-)" value={overrides.otherSub}  editable onChange={v=>setOverrides(p=>({...p,otherSub:v}))} />
@@ -1198,13 +1518,16 @@ export function PurchaseMasterPage() {
 
       {/* ═══ SHORTCUTS BAR ══════════════════════════════════════════════════ */}
       <div style={{ background:'#f8fafc', borderTop:'1px solid #e2e8f0', padding:'3px 10px', display:'flex', flexShrink:0, alignItems:'center', gap:10, flexWrap:'wrap' }}>
-        {[['F1','Save'],['F2','Free Product'],['F3','Edit'],['F5','View'],['F9','Delete'],['DEL','Delete'],['ESC','Exit']].map(([k,l]) => (
+        {[
+          ['F1','Save'],['F2','Free Prod'],['F3','Edit'],
+          ['F5','View'],['F9','Delete'],['DEL','Del Row'],
+          ['ESC','Exit'],['Ctrl+F','Form Focus'],['Ctrl+G','Grid Focus'],
+        ].map(([k,l]) => (
           <span key={k} style={{ display:'flex', alignItems:'center', gap:3, fontSize:11, color:'#555' }}>
             <span style={{ background:'#eff6ff', border:'1px solid #bfdbfe', color:'#1d4ed8', fontFamily:'monospace', fontWeight:700, fontSize:10, padding:'1px 5px', borderRadius:3 }}>{k}</span>
             {l} &nbsp;|
           </span>
         ))}
-        {/* Action buttons */}
         <div style={{ marginLeft:'auto', display:'flex', gap:6 }}>
           <button style={{ ...FS.btnP, height:26, padding:'0 12px', fontSize:11 }} onClick={handleSave}>
             💾 {editMode?'Update':'Save'}
@@ -1247,6 +1570,16 @@ export function PurchaseMasterPage() {
         />
       )}
 
+      {showFocusConfig && (
+        <FocusConfigModal
+          type={showFocusConfig}
+          onClose={() => setShowFocusConfig(null)}
+          onSave={(config) => {
+            console.log('Focus config saved:', showFocusConfig, config);
+          }}
+        />
+      )}
+
       {/* Spinner */}
       {loading && (
         <div style={{ position:'fixed', inset:0, background:'rgba(31,101,222,0.06)', zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(1px)' }}>
@@ -1256,13 +1589,11 @@ export function PurchaseMasterPage() {
 
       <ToastHost />
 
-      {/* Global CSS */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         input[type=text]:focus,input[type=number]:focus,input[type=date]:focus,select:focus {
           border-color: #2563eb !important; box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
-          box-shadow: 0 0 0 2px rgba(31,101,222,0.15) !important;
           outline: none;
         }
         input[type=radio], input[type=checkbox] { cursor: pointer; }
@@ -1270,7 +1601,6 @@ export function PurchaseMasterPage() {
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-thumb { background: #bfdbfe; border-radius: 3px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        /* remove number input arrows */
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
       `}</style>
@@ -1281,8 +1611,6 @@ export function PurchaseMasterPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Mini helper components
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Label + Field wrapper */
 function LF({ label, children }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
@@ -1292,7 +1620,6 @@ function LF({ label, children }) {
   );
 }
 
-/** Amount Row */
 function AR({ label, value, editable, onChange, highlight }) {
   return (
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
@@ -1317,7 +1644,6 @@ function AR({ label, value, editable, onChange, highlight }) {
   );
 }
 
-// Table header / data cell base styles
 const TH = {
   background:'#f8fafc', color:'#334155', padding:'5px 6px', fontWeight:500, fontSize:11,
   textAlign:'center', position:'sticky', top:0, zIndex:2, whiteSpace:'nowrap',
