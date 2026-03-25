@@ -2,32 +2,32 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { fmt2 } from '../../../shared/helpers/index.js';
 
 const EDITABLE_COLS = [
-  { key: 'productName',    label: 'Description',  width: 180, align: 'left',   type: 'search' },
-  { key: 'hsnCode',        label: 'HSN',           width: 70,  align: 'left',   type: 'text' },
-  { key: 'uom',            label: 'UOM',           width: 55,  align: 'center', type: 'text', readOnly: true },
-  { key: 'mrp',            label: 'MRP',           width: 75,  align: 'right',  type: 'number' },
-  { key: 'purchaseRate',   label: 'Pur.Rate',      width: 85,  align: 'right',  type: 'number' },
-  { key: 'itemQty',        label: 'Qty',           width: 70,  align: 'right',  type: 'number' },
-  { key: 'freeQty',        label: 'Free',          width: 60,  align: 'right',  type: 'number' },
-  { key: 'cdPercent',      label: 'CD%',           width: 60,  align: 'right',  type: 'number' },
-  { key: 'cdAmount',       label: 'CD Amt',        width: 72,  align: 'right',  type: 'number', readOnly: true },
-  { key: 'discountPercent',label: 'Disc%',         width: 60,  align: 'right',  type: 'number' },
-  { key: 'discountAmt',    label: 'Disc Amt',      width: 72,  align: 'right',  type: 'number', readOnly: true },
-  { key: 'taxPercent',     label: 'GST%',          width: 60,  align: 'right',  type: 'number' },
-  { key: 'taxAmt',         label: 'GST Amt',       width: 72,  align: 'right',  type: 'number', readOnly: true },
-  { key: 'saleRate',       label: 'Sale Rate',     width: 80,  align: 'right',  type: 'number' },
-  { key: 'amount',         label: 'Amount',        width: 90,  align: 'right',  type: 'number', readOnly: true },
+  { key: 'ProductName',    label: 'Description',  width: 180, align: 'left',   type: 'search' },
+  { key: 'HSNCode',        label: 'HSN',           width: 70,  align: 'left',   type: 'text' },
+  { key: 'UOM',            label: 'UOM',           width: 55,  align: 'center', type: 'text', readOnly: true },
+  { key: 'MRP',            label: 'MRP',           width: 75,  align: 'right',  type: 'number' },
+  { key: 'PurchaseRate',   label: 'Pur.Rate',      width: 85,  align: 'right',  type: 'number' },
+  { key: 'ItemQty',        label: 'Qty',           width: 70,  align: 'right',  type: 'number' },
+  { key: 'FreeQty',        label: 'Free',          width: 60,  align: 'right',  type: 'number' },
+  { key: 'CDPercent',      label: 'CD%',           width: 60,  align: 'right',  type: 'number' },
+  { key: 'CDAmount',       label: 'CD Amt',        width: 72,  align: 'right',  type: 'number', readOnly: true },
+  { key: 'DiscountPercent',label: 'Disc%',         width: 60,  align: 'right',  type: 'number' },
+  { key: 'DiscountAmt',    label: 'Disc Amt',      width: 72,  align: 'right',  type: 'number', readOnly: true },
+  { key: 'TaxPercent',     label: 'GST%',          width: 60,  align: 'right',  type: 'number' },
+  { key: 'TaxAmt',         label: 'GST Amt',       width: 72,  align: 'right',  type: 'number', readOnly: true },
+  { key: 'SalesRate',      label: 'Sale Rate',     width: 80,  align: 'right',  type: 'number' },
+  { key: 'Amount',         label: 'Amount',        width: 90,  align: 'right',  type: 'number', readOnly: true },
 ];
 
-function CellInput({ col, item, onItemChange, onProductSearch, onProductSelect, productSuggestions, productQuery }) {
+function CellInput({ col, item, idx, onItemChange, onProductSearch, onProductSelect, productSuggestions, productQuery }) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef(null);
 
-  const value = col.key === 'productName' && !focused ? item.productName : item[col.key];
+  const value = col.key === 'ProductName' && !focused ? item.ProductName : item[col.key];
 
   const handleBlur = () => {
     setFocused(false);
-    if (col.key === 'productName') onProductSearch('');
+    if (col.key === 'ProductName') onProductSearch('');
   };
 
   if (col.type === 'search') {
@@ -36,7 +36,7 @@ function CellInput({ col, item, onItemChange, onProductSearch, onProductSelect, 
         <input
           ref={inputRef}
           className={`grid-input text-left`}
-          value={focused ? productQuery : item.productName}
+          value={focused ? productQuery : (item.ProductName || '')}
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(handleBlur, 150)}
           onChange={e => {
@@ -51,12 +51,12 @@ function CellInput({ col, item, onItemChange, onProductSearch, onProductSelect, 
               <div
                 key={p.id}
                 className="autocomplete-item"
-                onMouseDown={() => onProductSelect(p, item.rowId)}
+                onMouseDown={() => onProductSelect(p, idx)}
               >
-                <span>{p.name}</span>
+                <span>{p.ProductName || p.name}</span>
                 <span style={{ display: 'flex', gap: 8 }}>
-                  <span className="code">{p.code}</span>
-                  <span className="rate">₹{fmt2(p.purchaseRate)}</span>
+                  <span className="code">{p.Productcode || p.code}</span>
+                  <span className="rate">₹{fmt2(p.PurRate || p.PurchaseRate || p.purchaseRate)}</span>
                 </span>
               </div>
             ))}
@@ -79,7 +79,7 @@ function CellInput({ col, item, onItemChange, onProductSearch, onProductSelect, 
       className="grid-input"
       type={col.type === 'number' ? 'number' : 'text'}
       value={item[col.key] ?? ''}
-      onChange={e => onItemChange(item.rowId, col.key, col.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value)}
+      onChange={e => onItemChange(idx, col.key, e.target.value)}
       onFocus={e => e.target.select()}
       min={0}
     />
@@ -158,7 +158,7 @@ export function ProductGrid({
                 </tr>
               )}
               {items.map((item, idx) => (
-                <tr key={item.rowId} className={item.editMode ? 'edited-row' : ''}>
+                <tr key={item.rowId || item._id || idx} className={item.EditMode || item.editMode ? 'edited-row' : ''}>
                   <td className="text-center" style={{ color: 'var(--text-muted)', fontSize: 11 }}>{idx + 1}</td>
                   {EDITABLE_COLS.map(col => (
                     <td
@@ -169,6 +169,7 @@ export function ProductGrid({
                       <CellInput
                         col={col}
                         item={item}
+                        idx={idx}
                         onItemChange={onItemChange}
                         onProductSearch={onProductSearch}
                         onProductSelect={onProductSelect}
@@ -178,7 +179,7 @@ export function ProductGrid({
                     </td>
                   ))}
                   <td className="text-center">
-                    <button className="btn-del-row" onClick={() => removeItem(item.rowId)} title="Delete row">✕</button>
+                    <button className="btn-del-row" onClick={() => removeItem(idx)} title="Delete row">✕</button>
                   </td>
                 </tr>
               ))}

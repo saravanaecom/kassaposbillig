@@ -54,6 +54,10 @@ function calcItem(item, igstBill = false) {
   const amount   = r2(purAmt - cdAmt - disAmt + gstAmt + cessAmt + transAmt);
   const productTotal = purAmt;
 
+  // StockQty calculation
+  const nomsQty = parseFloat(item.NomsQty) || 1;
+  const stockQty = (nomsQty * totalQty) + (parseFloat(item.FreeQty) || 0);
+
   return {
     ...item,
     CDAmount:      f2(cdAmt),
@@ -66,54 +70,135 @@ function calcItem(item, igstBill = false) {
     LandingCost:   f2(landingCost),
     Amount:        f2(amount),
     ProductTotal:  f2(productTotal),
+    StockQty:      f2(stockQty),
   };
 }
 
+// function calcTotals(items, overrides, igstBill) {
+//   const valid = items.filter(i => i.Productcode);
+
+//   const producttotal = r2(valid.reduce((s, i) => s + (parseFloat(i.ProductTotal) || 0), 0));
+//   const Tgstamt      = r2(valid.reduce((s, i) => s + (parseFloat(i.TaxAmt)       || 0), 0));
+//   const Tcess        = r2(valid.reduce((s, i) => s + (parseFloat(i.CESSAmount)   || 0), 0));
+//   const Ttransamt    = r2(valid.reduce((s, i) => s + (parseFloat(i.TransAmt)     || 0), 0));
+//   const Tcddiscamt   = r2(valid.reduce((s, i) => s + (parseFloat(i.CDAmount)     || 0), 0));
+//   const Tdiscamt     = r2(valid.reduce((s, i) => s + (parseFloat(i.DiscountAmt)  || 0), 0));
+//   const Tctamt       = r2(valid.reduce((s, i) => s + (parseFloat(i.CTAmount)     || 0), 0));
+//   const Tstamt       = r2(valid.reduce((s, i) => s + (parseFloat(i.STAmount)     || 0), 0));
+//   const totalQty     = r2(valid.reduce((s, i) => s + (parseFloat(i.ItemQty)      || 0), 0));
+
+//   const otherplus   = parseFloat(overrides.otherPlus)  || 0;
+//   const othersub    = parseFloat(overrides.otherSub)   || 0;
+//   const Tcsamount   = parseFloat(overrides.tcsPer)     || 0;
+//   const transManual = parseFloat(overrides.transAmt)   || 0; // manual freight — separate
+
+//   // Exact same formula as original JS line 5144
+//   const GrossTotal = r2(
+//     producttotal + Tgstamt + Tcess + Ttransamt + otherplus
+//     - Tcddiscamt - Tdiscamt - othersub
+//   );
+
+//   const Tcsamt1 = r2(GrossTotal * (Tcsamount / 100));
+
+//   // Original JS line 5146 — transManual (freight charges) added separately
+//   const nettotal = r2(GrossTotal + Tcsamt1 + transManual);
+
+//   return {
+//     grossAmt:   f2(producttotal),   // Gross Amt = product total only
+//     gstAmt:     f2(Tgstamt),
+//     cessAmt:    f2(Tcess),
+//     transAmt:   f2(Ttransamt),      // items-level trans (auto)
+//     cdAmt:      f2(Tcddiscamt),
+//     discAmt:    f2(Tdiscamt),
+//     cgstAmt:    f2(igstBill ? 0 : Tctamt),
+//     sgstAmt:    f2(igstBill ? 0 : Tstamt),
+//     tcsAmt:     f2(Tcsamt1),
+//     netAmt:     f2(nettotal),
+//     displayAmt: f2(GrossTotal),     // Display Amt = gross total before TCS+freight
+//     totalQty:   f2(totalQty),
+//   };
+// }
+// ─────────────────────────────────────────────────────────────────────────────
+// Calculation logic (Blackbox AI Base vs Effective Logic)
+// ─────────────────────────────────────────────────────────────────────────────
 function calcTotals(items, overrides, igstBill) {
   const valid = items.filter(i => i.Productcode);
-  const grossAmt  = r2(valid.reduce((s, i) => s + (parseFloat(i.ProductTotal) || 0), 0));
-  const gstAmt    = r2(valid.reduce((s, i) => s + (parseFloat(i.TaxAmt)       || 0), 0));
-  const cessAmt   = r2(valid.reduce((s, i) => s + (parseFloat(i.CESSAmount)   || 0), 0));
-  const transAmt  = r2(valid.reduce((s, i) => s + (parseFloat(i.TransAmt)     || 0), 0));
-  const cdAmt     = r2(valid.reduce((s, i) => s + (parseFloat(i.CDAmount)     || 0), 0));
-  const discAmt   = r2(valid.reduce((s, i) => s + (parseFloat(i.DiscountAmt)  || 0), 0));
-  const ctAmt     = r2(valid.reduce((s, i) => s + (parseFloat(i.CTAmount)     || 0), 0));
-  const stAmt     = r2(valid.reduce((s, i) => s + (parseFloat(i.STAmount)     || 0), 0));
-  const totalQty  = r2(valid.reduce((s, i) => s + (parseFloat(i.ItemQty)      || 0), 0));
 
-  const otherPlus  = parseFloat(overrides.otherPlus)  || 0;
-  const otherSub   = parseFloat(overrides.otherSub)   || 0;
-  const tcsPer     = parseFloat(overrides.tcsPer)     || 0;
-  const transManual= parseFloat(overrides.transAmt)   || 0;
+  // 1. BASE (Auto-calculated from Grid)
+  const base = {
+    grossAmt: r2(valid.reduce((s, i) => s + (parseFloat(i.ProductTotal) || 0), 0)),
+    gstAmt:   r2(valid.reduce((s, i) => s + (parseFloat(i.TaxAmt)       || 0), 0)),
+    cessAmt:  r2(valid.reduce((s, i) => s + (parseFloat(i.CESSAmount)   || 0), 0)),
+    transAmt: r2(valid.reduce((s, i) => s + (parseFloat(i.TransAmt)     || 0), 0)),
+    cdAmt:    r2(valid.reduce((s, i) => s + (parseFloat(i.CDAmount)     || 0), 0)),
+    discAmt:  r2(valid.reduce((s, i) => s + (parseFloat(i.DiscountAmt)  || 0), 0)),
+    cgstAmt:  igstBill ? 0 : r2(valid.reduce((s, i) => s + (parseFloat(i.CTAmount) || 0), 0)),
+    sgstAmt:  igstBill ? 0 : r2(valid.reduce((s, i) => s + (parseFloat(i.STAmount) || 0), 0)),
+    totalQty: r2(valid.reduce((s, i) => s + (parseFloat(i.ItemQty)      || 0), 0)),
+    otherPlus: 0,
+    otherSub: 0
+  };
 
-  const grossTotal = r2(grossAmt + gstAmt + cessAmt + transAmt + otherPlus - cdAmt - discAmt - otherSub);
-  const tcsAmt     = r2(grossTotal * tcsPer / 100);
-  const netAmt     = r2(grossTotal + tcsAmt + transManual);
+  // 2. EFFECTIVE (Use manual override if not empty, otherwise fallback to base)
+  const getEff = (key) => {
+    if (overrides[key] !== '' && overrides[key] !== undefined) {
+      const val = parseFloat(overrides[key]);
+      return isNaN(val) ? 0 : val;
+    }
+    return base[key] || 0;
+  };
 
+  const effective = {
+    grossAmt:  getEff('grossAmt'),
+    transAmt:  getEff('transAmt'),
+    cdAmt:     getEff('cdAmt'),
+    discAmt:   getEff('discAmt'),
+    gstAmt:    getEff('gstAmt'),
+    cessAmt:   getEff('cessAmt'),
+    cgstAmt:   getEff('cgstAmt'),
+    sgstAmt:   getEff('sgstAmt'),
+    otherPlus: getEff('otherPlus'),
+    otherSub:  getEff('otherSub'),
+  };
+
+  // 3. DYNAMIC NET TOTAL
+  const calculatedNetTotal = r2(
+    (effective.grossAmt + effective.gstAmt + effective.cessAmt + effective.transAmt + effective.otherPlus) - 
+    (effective.cdAmt + effective.discAmt + effective.otherSub)
+  );
+
+  effective.netAmt = (overrides.netAmt !== '' && overrides.netAmt !== undefined) 
+    ? parseFloat(overrides.netAmt) 
+    : calculatedNetTotal;
+
+  effective.displayAmt = (overrides.displayAmt !== '' && overrides.displayAmt !== undefined)
+    ? parseFloat(overrides.displayAmt)
+    : effective.grossAmt;
+
+  // Render format
   return {
-    grossAmt:   f2(grossAmt),
-    gstAmt:     f2(gstAmt),
-    cessAmt:    f2(cessAmt),
-    transAmt:   f2(transAmt),
-    cdAmt:      f2(cdAmt),
-    discAmt:    f2(discAmt),
-    cgstAmt:    f2(igstBill ? 0 : ctAmt),
-    sgstAmt:    f2(igstBill ? 0 : stAmt),
-    tcsAmt:     f2(tcsAmt),
-    netAmt:     f2(netAmt),
-    displayAmt: f2(grossAmt),
-    totalQty:   f2(totalQty),
+    base: {
+      grossAmt: f2(base.grossAmt), transAmt: f2(base.transAmt), cdAmt: f2(base.cdAmt), discAmt: f2(base.discAmt),
+      cessAmt: f2(base.cessAmt), cgstAmt: f2(base.cgstAmt), sgstAmt: f2(base.sgstAmt), gstAmt: f2(base.gstAmt),
+      otherPlus: '0.00', otherSub: '0.00', netAmt: f2(calculatedNetTotal), displayAmt: f2(base.grossAmt), totalQty: f2(base.totalQty)
+    },
+    effective: {
+      grossAmt: f2(effective.grossAmt), transAmt: f2(effective.transAmt), cdAmt: f2(effective.cdAmt), discAmt: f2(effective.discAmt),
+      cessAmt: f2(effective.cessAmt), cgstAmt: f2(effective.cgstAmt), sgstAmt: f2(effective.sgstAmt), gstAmt: f2(effective.gstAmt),
+      otherPlus: f2(effective.otherPlus), otherSub: f2(effective.otherSub), netAmt: f2(effective.netAmt), displayAmt: f2(effective.displayAmt),
+      totalQty: f2(base.totalQty)
+    }
   };
 }
-
 function buildGstRows(items, igstBill) {
   const map = {};
   items.filter(i => i.Productcode).forEach(i => {
     const k = parseFloat(i.TaxPercent) || 0;
-    if (!map[k]) map[k] = { gstPer: k, gstAmt: 0, cgst: 0, sgst: 0 };
-    map[k].gstAmt = r2(map[k].gstAmt + (parseFloat(i.TaxAmt)    || 0));
-    map[k].cgst   = r2(map[k].cgst   + (parseFloat(i.CTAmount)   || 0));
-    map[k].sgst   = r2(map[k].sgst   + (igstBill ? 0 : (parseFloat(i.STAmount) || 0)));
+    if (!map[k]) map[k] = { gstPer: k, gstAmt: 0, cgst: 0, sgst: 0, cessAmt: 0 };
+    map[k].gstAmt  = r2(map[k].gstAmt  + (parseFloat(i.TaxAmt)    || 0));
+    map[k].cgst    = r2(map[k].cgst    + (parseFloat(i.CTAmount)   || 0));
+    map[k].sgst    = r2(map[k].sgst    + (igstBill ? 0 : (parseFloat(i.STAmount) || 0)));
+    map[k].cessAmt = r2(map[k].cessAmt + (parseFloat(i.CESSAmount) || 0));
   });
   return Object.values(map).sort((a, b) => a.gstPer - b.gstPer);
 }
@@ -446,9 +531,6 @@ function ToastHost() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared Styles
-// ─────────────────────────────────────────────────────────────────────────────
 const MS = {
   backdrop: { position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:8000, display:'flex', alignItems:'flex-start', justifyContent:'center' },
   box:      { background:'#ffffff', borderRadius:8, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', overflow:'hidden', maxWidth:'96vw' },
@@ -464,10 +546,6 @@ const FS = {
   btnDanger:{ background:'#ffffff', color:'#dc2626', border:'1px solid #dc2626', borderRadius:4, fontWeight:600, fontSize:12, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, fontFamily:'inherit', height:30, padding:'0 14px' },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Supplier Search Dropdown
-// ✅ FIX: onEnter prop added — called after supplier is selected via Enter key
-// ─────────────────────────────────────────────────────────────────────────────
 const SupplierDropdown = React.forwardRef(
 ({ suppliers, supplierId, onSelect, onEnter }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -756,7 +834,8 @@ const [formFocusOrder, setFormFocusOrder] = useState([]);
   const [gridFocusOrder, setGridFocusOrder] = useState(FOCUS_KEYS);
   // ── Override fields
   const [overrides, setOverrides] = useState({
-    transAmt: '', otherPlus: '', otherSub: '', tcsPer: '0',
+    grossAmt: '', transAmt: '', displayAmt: '', cdAmt: '', discAmt: '', 
+    cessAmt: '', cgstAmt: '', sgstAmt: '', gstAmt: '', otherPlus: '', otherSub: '', netAmt: ''
   });
 
   // ── Edit state
@@ -865,8 +944,8 @@ if (activeField === 'supplier') {
     }, 60);
   }, []);
 
-  // ── Computed totals & GST rows
-  const totals  = useMemo(() => calcTotals(items, overrides, igst), [items, overrides, igst]);
+  // ── Computed totals (Destructuring base for placeholders, effective as totals)
+  const { base, effective: totals } = useMemo(() => calcTotals(items, overrides, igst), [items, overrides, igst]);
   const gstRows = useMemo(() => buildGstRows(items, igst),          [items, igst]);
 useEffect(() => {
   // Load form config
@@ -951,20 +1030,20 @@ useEffect(() => {
       const next = [...prev];
       const base = {
         ...next[rowIdx],
-        Productcode:     p.Productcode     || '',
-        ProductName:     p.ProductName     || '',
-        ProductRefId:    p.Id              || 0,
-        HSNCode:         p.HSNCode         || '',
-        UOM:             p.UOM             || '',
+        Productcode:     p.Productcode     || p.code || '',
+        ProductName:     p.ProductName     || p.name || '',
+        ProductRefId:    p.Id              || p.id   || 0,
+        HSNCode:         p.HSNCode         || p.hsnCode || '',
+        UOM:             p.UOM             || p.uom || '',
         UOMDecimal:      p.UOMDecimal      || 2,
-        MRP:             f2(p.MRP          || 0),
-        PurchaseRate:    f2(p.PurchaseRate || 0),
-        OldPurchaseRate: f2(p.PurchaseRate || 0),
-        StockQty:        f2(p.Stock        || 0),
+        MRP:             f2(p.MRP          || p.mrp || 0),
+        PurchaseRate:    f2(p.PurRate || p.PurchaseRate || p.purchaseRate || 0),
+        OldPurchaseRate: f2(p.PurRate || p.PurchaseRate || p.purchaseRate || 0),
+        StockQty:        f2(p.Stock        || p.stock || 0),
         ItemQty:         '1',
-        TaxPercent:      f2(p.GST          || 0),
-        CESSPer:         f2(p.CESS         || 0),
-        SalesRate:       f2(p.SalesRate    || 0),
+        TaxPercent:      f2(p.GST          || p.TaxPercent || p.taxPercent || 0),
+        CESSPer:         f2(p.CESS         || p.CESSPer || p.cessPercent || 0),
+        SalesRate:       f2(p.SalesRate    || p.saleRate || 0),
         LandingCost:     f2(p.LandingCost  || 0),
         ProfitPer:       f2(p.ProfitPer    || 0),
         ProfitAmt:       f2(p.ProfitAmt    || 0),
@@ -1188,10 +1267,9 @@ const handleCellKey = useCallback((e, rowIdx, colKey) => {
       setIgst(isIgst);
       setRemarks(d.Remarks || '');
       setOverrides({
-        transAmt:  f2(d.FreightCharges || 0),
-        otherPlus: f2(d.Others_A       || 0),
-        otherSub:  f2(d.Others_D       || 0),
-        tcsPer:    '0',
+        grossAmt: '', transAmt: f2(d.FreightCharges || 0), displayAmt: '', cdAmt: '', discAmt: '', 
+        cessAmt: '', cgstAmt: '', sgstAmt: '', gstAmt: '', 
+        otherPlus: f2(d.Others_A || 0), otherSub: f2(d.Others_D || 0), netAmt: ''
       });
       const rows = (d.PurchaseDetails || []).map(p => {
         const base = {
@@ -1250,7 +1328,10 @@ const handleCellKey = useCallback((e, rowIdx, colKey) => {
     setInvoiceNo(''); setInvoiceAmt(''); setInvoiceDate(today());
     setPurchaseDate(today()); setDueDate(today());
     setPurchaseType('CREDIT'); setIgst(false); setRemarks('');
-    setOverrides({ transAmt:'', otherPlus:'', otherSub:'', tcsPer:'0' });
+    setOverrides({ 
+      grossAmt: '', transAmt: '', displayAmt: '', cdAmt: '', discAmt: '', 
+      cessAmt: '', cgstAmt: '', sgstAmt: '', gstAmt: '', otherPlus: '', otherSub: '', netAmt: '' 
+    });
     setItems([newRow()]);
     try {
       const r = await PurchaseApi.getNextPurchaseNo();
@@ -1612,32 +1693,41 @@ ref={setFormRef(6)} data-field="invoiceAmt"
           <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:6, flex:1 }}>
             <div style={{ background:'#ffffff', color:'#2563eb', padding:'6px 10px', fontWeight:600, fontSize:11.5, borderRadius:'6px 6px 0 0', borderBottom:'1px solid #e2e8f0', borderLeft:'3px solid #2563eb' }}>💵 Amount Summary</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', borderTop:'1px solid #dde5f5' }}>
+              
+              {/* Column 1 */}
               <div style={{ borderRight:'1px solid #dde5f5' }}>
-                <AR label="Gross Amt"   value={totals.grossAmt} />
+                <AR label="Gross Amt" value={overrides.grossAmt} placeholder={base.grossAmt} editable onChange={v => setOverrides(p=>({...p, grossAmt:v}))} />
                 <div ref={setFormRef(7)} data-field="transAmt" tabIndex={0} onKeyDown={e => handleFormEnter(e, 7)}>
-                  <AR label="Trans Amt" value={overrides.transAmt} editable onChange={v=>setOverrides(p=>({...p,transAmt:v}))} />
+                  <AR label="Trans Amt" value={overrides.transAmt} placeholder={base.transAmt} editable onChange={v => setOverrides(p=>({...p, transAmt:v}))} />
                 </div>
-                <AR label="Display Amt" value={totals.displayAmt} />
+                <AR label="Display Amt" value={overrides.displayAmt} placeholder={base.displayAmt} editable onChange={v => setOverrides(p=>({...p, displayAmt:v}))} />
               </div>
+              
+              {/* Column 2 */}
               <div style={{ borderRight:'1px solid #dde5f5' }}>
-                <AR label="CD Amt"   value={totals.cdAmt} />
-                <AR label="Disc Amt" value={totals.discAmt} />
-                <AR label="CESS Amt" value={totals.cessAmt} />
+                <AR label="CD Amt" value={overrides.cdAmt} placeholder={base.cdAmt} editable onChange={v => setOverrides(p=>({...p, cdAmt:v}))} />
+                <AR label="Disc Amt" value={overrides.discAmt} placeholder={base.discAmt} editable onChange={v => setOverrides(p=>({...p, discAmt:v}))} />
+                <AR label="CESS Amt" value={overrides.cessAmt} placeholder={base.cessAmt} editable onChange={v => setOverrides(p=>({...p, cessAmt:v}))} />
               </div>
+              
+              {/* Column 3 */}
               <div style={{ borderRight:'1px solid #dde5f5' }}>
-                <AR label="CGST Amt" value={igst?'0.00':totals.cgstAmt} />
-                <AR label="SGST Amt" value={igst?'0.00':totals.sgstAmt} />
-                <AR label="GST Amt"  value={totals.gstAmt} />
+                <AR label="CGST Amt" value={overrides.cgstAmt} placeholder={base.cgstAmt} editable onChange={v => setOverrides(p=>({...p, cgstAmt:v}))} />
+                <AR label="SGST Amt" value={overrides.sgstAmt} placeholder={base.sgstAmt} editable onChange={v => setOverrides(p=>({...p, sgstAmt:v}))} />
+                <AR label="GST Amt" value={overrides.gstAmt} placeholder={base.gstAmt} editable onChange={v => setOverrides(p=>({...p, gstAmt:v}))} />
               </div>
+              
+              {/* Column 4 */}
               <div>
                 <div ref={setFormRef(8)} data-field="otherPlus" tabIndex={0} onKeyDown={e => handleFormEnter(e, 8)}>
-                  <AR label="Others (+)" value={overrides.otherPlus} editable onChange={v=>setOverrides(p=>({...p,otherPlus:v}))} />
+                  <AR label="Others (+)" value={overrides.otherPlus} placeholder={base.otherPlus} editable onChange={v => setOverrides(p=>({...p, otherPlus:v}))} />
                 </div>
                 <div ref={setFormRef(9)} data-field="otherSub" tabIndex={0} onKeyDown={e => handleFormEnter(e, 9)}>
-                  <AR label="Others (-)" value={overrides.otherSub}  editable onChange={v=>setOverrides(p=>({...p,otherSub:v}))} />
+                  <AR label="Others (-)" value={overrides.otherSub} placeholder={base.otherSub} editable onChange={v => setOverrides(p=>({...p, otherSub:v}))} />
                 </div>
-                <AR label="Net Total"  value={totals.netAmt} highlight />
+                <AR label="Net Total" value={overrides.netAmt} placeholder={base.netAmt} editable onChange={v => setOverrides(p=>({...p, netAmt:v}))} highlight />
               </div>
+
             </div>
           </div>
         </div>
@@ -1751,7 +1841,8 @@ function LF({ label, children }) {
   );
 }
 
-function AR({ label, value, editable, onChange, highlight }) {
+function AR({ label, value, placeholder, editable, onChange, highlight }) {
+  const displayValue = (value === '' || value === undefined) ? placeholder : value;
   return (
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
       padding:'3px 7px', borderBottom:'1px solid #f0f4ff', fontSize:12,
@@ -1759,16 +1850,17 @@ function AR({ label, value, editable, onChange, highlight }) {
       <span style={{ color: highlight?'#2563eb':'#64748b', fontWeight: highlight?700:'normal' }}>{label}</span>
       {editable ? (
         <input
+          type="number"
           style={{ width:90, height:20, padding:'0 4px', border:'1px solid #aaaaaa', borderRadius:2,
             fontSize:11.5, fontFamily:'monospace', textAlign:'right', background:'white', outline:'none' }}
-          value={value}
+          value={displayValue}
           onChange={e => onChange(e.target.value)}
           onFocus={e => e.target.select()}
         />
       ) : (
         <span style={{ fontFamily:'monospace', fontWeight:highlight?700:600,
           color:highlight?'#16a34a':'#0f172a', fontSize:highlight?13:12 }}>
-          {value}
+          {displayValue}
         </span>
       )}
     </div>

@@ -15,16 +15,19 @@
 5. [x] preventDefault only for navigation keys ✅
 6. [x] Test complete ✅
 
-**🎉 SupplierDropdown (PurchaseMasterPage.jsx) FULLY FIXED** 
+**🎉 ALL CALCULATION + LAYOUT BUGS FIXED** 
 
-✅ ArrowUp/Down keyboard navigation + highlight
-✅ Auto-scroll with scrollIntoView({block: 'nearest'})
-✅ Always-mounted dropdown (display toggle not conditional render)
-✅ Enter selects highlighted/first item + calls onEnter()
-✅ Mouse hover highlight + click
-✅ Search filtering intact
-✅ Escape closes
+**GstSummary.jsx:**
+- `row.taxPercent` → `row.gstPer`
+- `row.taxableAmt`/`row.igstAmt` → `row.gstAmt`
+- Totals: `totalTaxable/totalIgst` → `totalGst` etc.
 
-**Requirements met:** No default browser block, smooth scroll, all existing functionality preserved.
+**AmountSummary.jsx:**
+- `gridTemplateColumns: '1fr 1fr 1fr'` → `'1fr 1fr 1fr 1fr 1fr'` (5 columns)
+- `overrides.tcsPercent` → `overrides.tcsPer` (matches calcTotals)
 
-Test: npm run dev → Purchase → Supplier dropdown → Arrow keys + Enter ✨
+**Result:** Proper grid layout, accurate GST display, TCS calculation works.
+
+**SupplierDropdown keyboard fix intact** from previous step.
+
+**FULLY FUNCTIONAL PURCHASE FORM** ✅ Test: npm run dev → add items → watch GST/Amount summaries update correctly.
