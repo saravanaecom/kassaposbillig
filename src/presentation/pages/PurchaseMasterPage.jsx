@@ -472,8 +472,10 @@ const SupplierDropdown = React.forwardRef(
 ({ suppliers, supplierId, onSelect, onEnter }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchVal, setSearchVal] = useState('');
+  const [highlightIndex, setHighlightIndex] = useState(-1);
   const wrapperRef = useRef(null);
   const searchRef = useRef(null);
+  const listRef = useRef(null);
 useImperativeHandle(ref, () => ({
   focus: () => {
     setIsOpen(true);
@@ -487,6 +489,7 @@ useImperativeHandle(ref, () => ({
     if (isOpen && searchRef.current) {
       searchRef.current.focus();
       setSearchVal('');
+      setHighlightIndex(-1);
     }
   }, [isOpen]);
 
@@ -519,22 +522,44 @@ useImperativeHandle(ref, () => ({
     onSelect(supplier.Id);
   };
 
-  // ✅ FIX: Enter key in supplier search → select first match → jump to Invoice No
+  // Keyboard navigation + scroll
   const handleSearchKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIndex(i => i < 0 ? 0 : Math.min(i + 1, filtered.length - 1));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIndex(i => i <= 0 ? 0 : i - 1);
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (filtered.length > 0) {
+      if (highlightIndex >= 0 && filtered[highlightIndex]) {
+        handleSelect(filtered[highlightIndex]);
+        setTimeout(() => onEnter?.(), 50);
+      } else if (filtered.length > 0) {
         handleSelect(filtered[0]);
         setTimeout(() => onEnter?.(), 50);
       } else {
         setIsOpen(false);
         onEnter?.();
       }
+      return;
     }
     if (e.key === 'Escape') {
       setIsOpen(false);
+      return;
     }
   };
+
+  // Auto-scroll highlighted item
+  useEffect(() => {
+    if (!isOpen || highlightIndex < 0 || !listRef.current) return;
+    const item = listRef.current.children[highlightIndex];
+    if (item) item.scrollIntoView({ block: 'nearest' });
+  }, [highlightIndex, isOpen]);
 
   return (
     <div ref={wrapperRef} style={{ position: 'relative' }}>
@@ -551,50 +576,52 @@ useImperativeHandle(ref, () => ({
         {selectedSupplier ? selectedSupplier.AccountName : 'Select SupplierName'}
         <span style={{ position: 'absolute', right: 7, color: '#64748b', fontSize: 10 }}>▼</span>
       </div>
-      {isOpen && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0,
-          backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: 4,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 9999,
-        }}>
-          <div style={{ padding: '5px 6px', borderBottom: '1px solid #e2e8f0' }}>
-            <input
-              ref={searchRef}
-              type="text"
-              value={searchVal}
-              onChange={e => setSearchVal(e.target.value)}
-              placeholder="🔍 Search supplier..."
-              autoComplete="off"
-              onKeyDown={handleSearchKeyDown}
-              style={{
-                width: '100%', height: 24, fontSize: 12, border: '1px solid #cbd5e1',
-                borderRadius: 3, padding: '0 7px', outline: 'none',
-                boxSizing: 'border-box', fontFamily: 'inherit',
-              }}
-            />
-          </div>
-          <ul style={{ maxHeight: 180, overflowY: 'auto', margin: 0, padding: 0, listStyle: 'none' }}>
-            {filtered.length === 0 ? (
-              <li style={{ padding: '6px 10px', color: '#94a3b8', fontSize: 12 }}>No suppliers found</li>
-            ) : (
-              filtered.map(s => (
-                <li
-                  key={s.Id}
-                  onMouseDown={() => handleSelect(s)}
-                  style={{
-                    padding: '5px 10px', fontSize: 12, cursor: 'pointer',
-                    backgroundColor: s.Id === supplierId ? '#e2e8f0' : 'white', color: '#0f172a',
-                  }}
-                  onMouseEnter={e => { if (s.Id !== supplierId) e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
-                  onMouseLeave={e => { if (s.Id !== supplierId) e.currentTarget.style.backgroundColor = 'white'; }}
-                >
-                  {s.AccountName}
-                </li>
-              ))
-            )}
-          </ul>
+      <div style={{
+        position: 'absolute', top: '100%', left: 0, right: 0,
+        backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: 4,
+        boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 9999,
+        display: isOpen ? 'block' : 'none',  // Always mounted, toggle display
+      }}>
+        <div style={{ padding: '5px 6px', borderBottom: '1px solid #e2e8f0' }}>
+          <input
+            ref={searchRef}
+            type="text"
+            value={searchVal}
+            onChange={e => {
+              setSearchVal(e.target.value);
+              setHighlightIndex(-1);
+            }}
+            placeholder="🔍 Search supplier..."
+            autoComplete="off"
+            onKeyDown={handleSearchKeyDown}
+            style={{
+              width: '100%', height: 24, fontSize: 12, border: '1px solid #cbd5e1',
+              borderRadius: 3, padding: '0 7px', outline: 'none',
+              boxSizing: 'border-box', fontFamily: 'inherit',
+            }}
+          />
         </div>
-      )}
+        <ul ref={listRef} style={{ maxHeight: 180, overflowY: 'auto', margin: 0, padding: 0, listStyle: 'none' }}>
+          {filtered.length === 0 ? (
+            <li style={{ padding: '6px 10px', color: '#94a3b8', fontSize: 12 }}>No suppliers found</li>
+          ) : (
+            filtered.map((s, i) => (
+              <li
+                key={s.Id}
+                onMouseDown={() => handleSelect(s)}
+                style={{
+                  padding: '5px 10px', fontSize: 12, cursor: 'pointer',
+                  backgroundColor: s.Id === supplierId ? '#e2e8f0' : i === highlightIndex ? '#f1f5f9' : 'white',
+                  color: '#0f172a',
+                }}
+                onMouseEnter={() => setHighlightIndex(i)}
+              >
+                {s.AccountName}
+              </li>
+            ))
+          )}
+        </ul>
+      </div>
     </div>
   );
 });

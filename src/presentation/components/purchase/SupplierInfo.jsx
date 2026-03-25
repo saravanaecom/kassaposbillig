@@ -11,7 +11,8 @@ export const SupplierInfo = forwardRef(
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const wrapperRef = useRef(null);
-  const isTypingRef = useRef(false);
+const isTypingRef = useRef(false);
+  const listRef = useRef(null);
 
   // Supplier select ஆனா input-ல name show பண்ணு
   useEffect(() => {
@@ -38,6 +39,16 @@ export const SupplierInfo = forwardRef(
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [header.supplierId, suppliers]);
+
+  // Simple reliable scrollIntoView (handles all positioning/offset issues)
+  useEffect(() => {
+    if (!isOpen || highlightIndex < 0) return;
+    const list = listRef.current;
+    if (!list) return;
+    const item = list.children[highlightIndex];
+    if (!item) return;
+    item.scrollIntoView({ block: 'nearest' });
+  }, [highlightIndex, isOpen]);
     useImperativeHandle(ref, () => ({
       focusSupplier() {
         setIsOpen(true);
@@ -78,14 +89,22 @@ export const SupplierInfo = forwardRef(
       }
       return;
     }
+
+    // Prevent default only for navigation keys
+    if (['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) {
+      e.preventDefault();
+    }
     
-    e.preventDefault();
     switch (e.key) {
       case 'ArrowDown':
-        setHighlightIndex(i => Math.min(i + 1, filtered.length - 1));
+        setHighlightIndex(i =>
+          i < 0 ? 0 : Math.min(i + 1, filtered.length - 1)
+        );
         break;
       case 'ArrowUp':
-        setHighlightIndex(i => Math.max(i - 1, 0));
+        setHighlightIndex(i =>
+          i <= 0 ? 0 : i - 1
+        );
         break;
       case 'Enter':
         if (highlightIndex >= 0 && filtered[highlightIndex]) {
@@ -141,9 +160,10 @@ export const SupplierInfo = forwardRef(
               }}
             >▼</span>
 
-            {/* Dropdown list */}
-            {isOpen && (
-              <ul style={{
+            {/* Dropdown list - always mounted, toggle with display */}
+            <ul 
+              ref={listRef}
+              style={{
                 position: 'absolute',
                 top: '100%',
                 left: 0, right: 0,
@@ -157,35 +177,35 @@ export const SupplierInfo = forwardRef(
                 margin: 0,
                 padding: 0,
                 listStyle: 'none',
+                display: isOpen ? 'block' : 'none',
               }}>
-                {filtered.length === 0 ? (
-                  <li style={{ padding: '6px 12px', color: '#a0aec0', fontSize: 13 }}>
-                    No suppliers found
+              {filtered.length === 0 ? (
+                <li style={{ padding: '6px 12px', color: '#a0aec0', fontSize: 13 }}>
+                  No suppliers found
+                </li>
+              ) : (
+                filtered.map((s, i) => (
+                  <li
+                    key={s.Id}
+                    onMouseDown={() => handleSelect(s)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      backgroundColor:
+                        s.Id === header.supplierId
+                          ? '#e2e8f0'
+                          : i === highlightIndex
+                          ? '#edf2f7'
+                          : 'white',
+                      color: '#2d3748',
+                    }}
+                  >
+                    {s.AccountName}
                   </li>
-                ) : (
-                  filtered.map((s, i) => (
-                    <li
-                      key={s.Id}
-                      onMouseDown={() => handleSelect(s)}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: 13,
-                        cursor: 'pointer',
-                        backgroundColor:
-                          s.Id === header.supplierId
-                            ? '#e2e8f0'
-                            : i === highlightIndex
-                            ? '#edf2f7'
-                            : 'white',
-                        color: '#2d3748',
-                      }}
-                    >
-                      {s.AccountName}
-                    </li>
-                  ))
-                )}
-              </ul>
-            )}
+                ))
+              )}
+            </ul>
           </div>
         </div>
 
