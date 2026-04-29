@@ -29,11 +29,13 @@ const Login = () => {
       const data = await res.json();
       console.log("API RESPONSE:", data);
 
-      if (data.ok === true || data.IsSuccess === true) {
+      if ( data.IsSuccess === true) {
         // Save minimal info
-        if (data.data && data.data.length > 0) {
-          localStorage.setItem("userid", data.data[0].UserId);
-        }
+      
+      // localStorage.setItem("userid", data.data[0].UserId);
+       localStorage.setItem("token", data.Data14);
+       
+       
         localStorage.setItem("username", email);
 
         // Redirect to dashboard

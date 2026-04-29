@@ -1,17 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import "../Itemmaster.css";
 
 // ═══════════════════════════════════════════════════════════════
 //  SERVER CONFIG
-//  This matches your jQuery $.ajax url: "/Brand/SelectBrand" etc.
-//  Set BASE_URL to your server. All API paths are the same as the
-//  original jQuery code — just prefixed with this base URL.
+//  BASE_URL = ""  →  uses the Vite proxy (recommended for dev)
+//                    see vite.config.js — proxy forwards all API
+//                    routes to http://13.200.71.164:9001
+//
+//  BASE_URL = "http://13.200.71.164:9001"
+//            →  direct calls to server (requires CORS enabled on server)
 // ═══════════════════════════════════════════════════════════════
-const BASE_URL = "http://13.200.71.164:9001";
-//  ↑ Change this to your server IP/domain if it changes.
-//  Examples:
-//    const BASE_URL = "http://13.200.71.164:9001";  ← your current server
-//    const BASE_URL = "https://yourdomain.com";
-//    const BASE_URL = "";  ← if React is served from the same server
+const BASE_URL = "";   // ← keep empty if using vite.config.js proxy
 
 // ── Build full URL (mirrors jQuery url: "/Brand/SelectBrand") ──
 // Ensures path always starts with /  e.g.  BASE_URL + "/Brand/SelectBrand"
@@ -19,6 +18,11 @@ const mkUrl = (path) => {
   const p = path.startsWith("/") ? path : "/" + path;
   return BASE_URL + p;
 };
+var token=localStorage.getItem('token')  ; 
+
+const getToken = () =>
+  localStorage.getItem('token')   
+
 
 // ── Safe POST — mirrors jQuery $.ajax type:"POST" ──
 // Never throws. Returns parsed JSON or { ok:false, message, _netErr/_http404 }
@@ -27,7 +31,14 @@ const api = async (path, body, extraHeaders = {}) => {
     const fullUrl = mkUrl(path);
     const res = await fetch(fullUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json; charset=utf-8", ...extraHeaders },
+      headers: { "Content-Type": "application/json; charset=utf-8"  ,
+        'Authorization': `Bearer ${getToken()}`,
+        
+        ...extraHeaders 
+
+
+
+      },
       body: JSON.stringify(body),
     });
     if (res.status === 404)
@@ -139,16 +150,44 @@ const ns = v => (v == null ? "" : String(v));
 const zp = (n, d) => String(n).padStart(d, "0");
 
 // ─── CALC ENGINE (mirrors JS calcution) ───
-function calc(form) {
+function calc(form, sessFlags, isNewRow) {
   const PR=vn(form.PurchaseRate), GST=vn(form.GST), CESS=vn(form.CESS);
   const TP=vn(form.TransPer), MRP=vn(form.MRP), PP=vn(form.ProfitPer);
   const GSTAmt=ro(PR*GST/100), CessAmt=ro(PR*CESS/100), TrAmt=ro(PR*TP/100);
   const LC=ro(PR+GSTAmt+CessAmt+TrAmt);
   const DlrAmt=ro(MRP-LC), DlrPer=MRP>0?ro(DlrAmt/MRP*100):0;
   const ProfitAmt=ro(LC*PP/100);
-  const SR=ProfitAmt!==0?f2(LC+ProfitAmt):(vn(form.SalesRate)||f2(MRP));
+
+  // mirrors jQuery calcution():
+  // PurchaseProfitSaleRateChange=true: if ProfitAmt!=0 → SR=LC+ProfitAmt
+  //                                    if ProfitAmt==0 && new row (Id==0) → SR=MRP
+  //                                    if ProfitAmt==0 && existing row → keep current SR
+  // PurchaseProfitSaleRateChange=false: if Id==0 (new row) → SR=MRP (keep existing on edit)
+  let SR;
+  if (sessFlags && sessFlags.PurchaseProfitSaleRateChange) {
+    if (ProfitAmt !== 0) {
+      SR = f2(LC + ProfitAmt);
+    } else {
+      // isNewRow mirrors jQuery: ValNum(grdId)==0
+      SR = isNewRow ? f2(MRP) : (vn(form.SalesRate) || f2(MRP));
+    }
+  } else {
+    if (ProfitAmt !== 0) {
+      SR = f2(LC + ProfitAmt);
+    } else {
+      SR = isNewRow ? f2(MRP) : (vn(form.SalesRate) || f2(MRP));
+    }
+  }
+
+  let finalMRP = MRP;
+  if (sessFlags && sessFlags.univercell) {
+    // mirrors jQuery: MRP = SalesRate when univercell=true
+    finalMRP = f2(ro(SR));
+  }
+
   return { GSTAmt:f2(GSTAmt),CESSAmt:f2(CessAmt),TransAmt:f2(TrAmt),LandingCost:f2(LC),
-           DMAmt:f2(DlrAmt),DMPer:f2(DlrPer),ProfitAmt:f2(ProfitAmt),SalesRate:SR };
+           DMAmt:f2(DlrAmt),DMPer:f2(DlrPer),ProfitAmt:f2(ProfitAmt),SalesRate:SR,
+           ...(sessFlags && sessFlags.univercell ? { MRP: finalMRP } : {}) };
 }
 function calcFromSR(form) {
   const LC=vn(form.LandingCost), SR=vn(form.SalesRate);
@@ -174,197 +213,6 @@ function fmtRow(obj) {
   return r;
 }
 
-// ─────────────────────────────────────────────
-//  CSS
-// ─────────────────────────────────────────────
-const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',sans-serif;}
-html,body,#root{height:100%;margin:0;padding:0;}
-.im{height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#eef1f7;font-size:12.5px;}
-.hdr{background:#1a2e4a;display:flex;align-items:stretch;height:46px;flex-shrink:0;box-shadow:0 3px 10px rgba(0,0,0,.3);}
-.hdr-brand{background:#e8a020;display:flex;align-items:center;padding:0 14px;gap:8px;min-width:155px;}
-.hdr-icon{width:26px;height:26px;border-radius:5px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#e8a020;}
-.hdr-name{font-size:13px;font-weight:700;color:#fff;}
-.hdr-sub{font-size:9px;font-weight:600;color:rgba(255,255,255,.7);letter-spacing:1.5px;text-transform:uppercase;}
-.hdr-title{flex:1;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;}
-.hdr-user{display:flex;align-items:center;gap:9px;padding:0 14px;border-left:1px solid rgba(255,255,255,.1);}
-.hdr-avatar{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:14px;}
-.hdr-uname{font-size:12px;font-weight:600;color:#fff;} .hdr-urole{font-size:10px;color:rgba(255,255,255,.5);}
-.body{flex:1;display:flex;flex-direction:column;gap:5px;padding:7px 10px;overflow:hidden;min-height:0;}
-.tbar{background:#fff;border:1px solid #d4dbe8;border-left:4px solid #e8a020;border-radius:5px;display:flex;align-items:center;justify-content:space-between;padding:4px 10px;flex-shrink:0;}
-.tbar-txt{color:#1a2e4a;font-size:13px;font-weight:700;}
-.pgbtn{width:24px;height:22px;border:1px solid #d4dbe8;background:#fff;border-radius:3px;cursor:pointer;font-size:11px;color:#1a2e4a;font-weight:600;}
-.pgbtn:hover{background:#fef3e0;border-color:#e8a020;color:#e8a020;} .pgbtn.on{background:#e8a020;color:#fff;border-color:#e8a020;}
-.badge{background:#1a2e4a;color:#fff;font-size:11px;font-weight:600;padding:1px 9px;border-radius:20px;}
-.badge-w{background:#fff3cd;color:#856404;font-size:10px;font-weight:600;padding:1px 8px;border-radius:20px;border:1px solid #ffc107;}
-.verr{background:#fff0f0;border:1px solid #f5c2c7;border-radius:3px;padding:2px 9px;font-size:10px;color:#842029;font-weight:600;}
-.fbar{background:#fff;border:1px solid #d4dbe8;border-radius:5px;padding:4px 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;}
-.flbl{font-size:10px;font-weight:600;color:#6b7a99;}
-.finp{border:1px solid #d4dbe8;border-radius:3px;padding:2px 6px;font-size:11px;height:23px;outline:none;}
-.finp:focus{border-color:#e8a020;box-shadow:0 0 0 2px rgba(232,160,32,.15);}
-.grid-wrap{flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid #d4dbe8;border-radius:5px;background:#fff;overflow:hidden;}
-.fstrip-scroll{overflow:hidden;flex-shrink:0;background:linear-gradient(180deg,#fff9ef,#feefd4);border-bottom:2px solid #e8a020;}
-.fstrip{display:flex;align-items:flex-end;padding:4px 0;width:max-content;}
-.fcell{display:flex;flex-direction:column;gap:1px;padding:0 3px;flex-shrink:0;}
-.fcell label{font-size:9.5px;color:#7a5000;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.fcell input,.fcell select{border:1px solid #f0c870;border-radius:3px;padding:1px 5px;font-size:11px;color:#1a2e4a;background:#fff;outline:none;height:23px;width:100%;}
-.fcell input:focus,.fcell select:focus{border-color:#e8a020;box-shadow:0 0 0 2px rgba(232,160,32,.18);}
-.fcell input.calc{background:#eef7ff;border-color:#b3d4f5;color:#0f55a8;font-weight:600;}
-.fcell input.combo{cursor:pointer;background:#fffdf5;}
-.gscroll{flex:1;overflow:auto;min-height:0;cursor:grab;user-select:none;}
-.gscroll:active{cursor:grabbing;}
-.gtbl{border-collapse:collapse;table-layout:fixed;}
-.gtbl thead tr{position:sticky;top:0;z-index:3;}
-.gtbl th{background:#1a2e4a;color:#fff;border:1px solid #253d5e;padding:4px 6px;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.gtbl th:first-child{background:#152540;}
-.gtbl td{border:1px solid #eaecf4;padding:2px 6px;font-size:11px;color:#1a2e4a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.gtbl tbody tr{cursor:pointer;transition:background .07s;}
-.gtbl tbody tr:nth-child(even){background:#f5f7fc;}
-.gtbl tbody tr:hover{background:#fef3e0;}
-.gtbl tbody tr.sel{background:#fddfa0 !important;}
-.gtbl tbody tr.inact td{color:#bbb;}
-.gtbl tbody tr.mod td:first-child{border-left:3px solid #e8a020;}
-.sno{text-align:center;color:#8b99b5;}
-.empty-td{text-align:center;color:#b0bbd4;padding:36px 0;font-size:12px;}
-.y{background:#d1fae5;color:#065f46;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700;}
-.n{background:#fee2e2;color:#991b1b;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700;}
-.ftr{background:#fff;border-top:2px solid #d4dbe8;padding:4px 10px;display:flex;align-items:center;gap:1px;flex-wrap:wrap;flex-shrink:0;}
-.fb{display:flex;align-items:center;gap:3px;background:none;border:1px solid transparent;cursor:pointer;font-size:11px;color:#4a5568;padding:3px 7px;border-radius:3px;transition:all .1s;font-weight:500;white-space:nowrap;}
-.fb:hover{background:#fef3e0;color:#e8a020;border-color:#f0c870;}
-.fb:disabled{opacity:.4;cursor:not-allowed;}
-.fb.sv{color:#1a2e4a;font-weight:700;} .fb.sv:hover{background:#1a2e4a !important;color:#fff !important;border-color:#1a2e4a !important;}
-.fb.dl{color:#dc3545;} .fb.dl:hover{background:#dc3545 !important;color:#fff !important;border-color:#dc3545 !important;}
-.fb.ex{color:#198754;} .fb.ex:hover{background:#198754 !important;color:#fff !important;border-color:#198754 !important;}
-.fb.nw{color:#6f42c1;} .fb.nw:hover{background:#6f42c1 !important;color:#fff !important;border-color:#6f42c1 !important;}
-.fb.cf{color:#0d6efd;} .fb.cf:hover{background:#0d6efd !important;color:#fff !important;border-color:#0d6efd !important;}
-.fsep{color:#d4dbe8;font-size:14px;padding:0 2px;}
-.ldr-ov{position:fixed;inset:0;background:rgba(10,20,40,.5);display:flex;align-items:center;justify-content:center;z-index:9000;}
-.ldr-box{background:#fff;border-radius:8px;padding:20px 30px;display:flex;flex-direction:column;align-items:center;gap:10px;box-shadow:0 16px 48px rgba(0,0,0,.25);min-width:160px;}
-.ldr-spin{width:34px;height:34px;border:4px solid #eee;border-top-color:#e8a020;border-radius:50%;animation:spin .55s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg)}}
-.ldr-msg{font-size:12px;color:#4a5568;font-weight:600;}
-.ov{position:fixed;inset:0;background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center;z-index:2000;}
-.ov.z25{z-index:2500;} .ov.z30{z-index:3000;}
-.dd-modal{background:#fff;border-radius:8px;width:340px;max-height:520px;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.25);overflow:hidden;}
-.dd-hdr{background:#1a2e4a;color:#fff;padding:8px 14px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;}
-.dd-hdr button{background:none;border:none;color:#fff;cursor:pointer;font-size:16px;line-height:1;}
-.dd-srch{border:1px solid #d4dbe8;margin:7px;border-radius:4px;padding:3px 8px;font-size:11px;height:27px;outline:none;width:calc(100% - 14px);}
-.dd-srch:focus{border-color:#e8a020;}
-.dd-list{overflow-y:auto;flex:1;}
-.dd-item{padding:5px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid #f0f2f8;color:#1a2e4a;}
-.dd-item:hover,.dd-item.hi{background:#fef3e0;color:#c07a10;font-weight:600;}
-.dd-empty{padding:20px;text-align:center;color:#b0bbd4;font-size:11px;}
-.dd-create{padding:7px 14px;font-size:11px;color:#0d6efd;cursor:pointer;border-top:1px solid #e0e5f0;font-weight:600;}
-.dd-create:hover{background:#e8f0ff;}
-.bc-modal{background:#fff;border-radius:8px;width:420px;max-height:500px;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.25);overflow:hidden;}
-.bc-body{padding:10px;flex:1;overflow-y:auto;}
-.bc-row{display:flex;align-items:center;gap:7px;margin-bottom:5px;}
-.bc-inp{border:1px solid #d4dbe8;border-radius:3px;padding:3px 7px;font-size:12px;flex:1;height:27px;outline:none;}
-.bc-inp:focus{border-color:#e8a020;}
-.bc-add{border:none;background:#e8a020;color:#fff;border-radius:3px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:700;height:27px;}
-.bc-del{border:none;background:#dc3545;color:#fff;border-radius:3px;padding:3px 8px;font-size:11px;cursor:pointer;height:27px;}
-.mftr{padding:8px 12px;border-top:1px solid #e0e5f0;display:flex;gap:8px;justify-content:flex-end;}
-.mbtn-save{border:none;background:#1a2e4a;color:#fff;border-radius:4px;padding:4px 16px;font-size:11px;font-weight:700;cursor:pointer;height:28px;}
-.mbtn-save:hover{background:#e8a020;} .mbtn-save:disabled{opacity:.45;}
-.mbtn-cancel{border:1px solid #d4dbe8;background:#fff;color:#555;border-radius:4px;padding:4px 12px;font-size:11px;cursor:pointer;height:28px;}
-.unit-modal{background:#fff;border-radius:8px;width:520px;max-height:500px;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.25);overflow:hidden;}
-.bsr-modal{background:#fff;border-radius:8px;width:480px;max-height:500px;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.25);overflow:hidden;}
-.unit-body{padding:10px;flex:1;overflow-y:auto;}
-.utbl{width:100%;border-collapse:collapse;font-size:12px;}
-.utbl th{background:#1a2e4a;color:#fff;padding:4px 7px;font-size:11px;text-align:left;}
-.utbl td{border:1px solid #eaecf4;padding:3px 5px;}
-.utbl input,.utbl select{border:1px solid #d4dbe8;border-radius:3px;padding:2px 5px;font-size:11px;width:100%;height:23px;outline:none;}
-.utbl input:focus,.utbl select:focus{border-color:#e8a020;}
-.tname-modal,.img-modal{background:#fff;border-radius:8px;width:460px;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.25);overflow:hidden;}
-.modal-body{padding:12px 14px;display:flex;flex-direction:column;gap:8px;}
-.tname-inp{border:1px solid #d4dbe8;border-radius:4px;padding:4px 10px;font-size:12px;height:30px;outline:none;width:100%;}
-.tname-inp:focus{border-color:#e8a020;}
-.img-preview{width:100%;max-height:220px;object-fit:contain;border:1px solid #e0e5f0;border-radius:4px;background:#f8f9fb;}
-.img-no{width:100%;height:100px;border:1px dashed #d4dbe8;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#b0bbd4;font-size:12px;}
-.img-row{display:flex;gap:7px;}
-.img-inp{border:1px solid #d4dbe8;border-radius:4px;padding:4px 10px;font-size:11px;height:27px;outline:none;flex:1;}
-.img-inp:focus{border-color:#e8a020;}
-.pw-modal{background:#fff;border-radius:8px;padding:20px 22px;min-width:240px;box-shadow:0 16px 48px rgba(0,0,0,.25);}
-.pw-title{font-size:13px;font-weight:700;color:#1a2e4a;margin-bottom:11px;}
-.pw-inp{border:1px solid #d4dbe8;border-radius:4px;padding:4px 9px;width:100%;font-size:12px;height:29px;outline:none;}
-.pw-inp:focus{border-color:#e8a020;}
-.pw-btns{display:flex;gap:8px;margin-top:11px;justify-content:flex-end;}
-.pw-ok{border:none;background:#1a2e4a;color:#fff;border-radius:4px;padding:4px 16px;font-size:11px;font-weight:700;cursor:pointer;}
-.pw-ok:hover{background:#e8a020;}
-.pw-cancel{border:1px solid #d4dbe8;background:#fff;color:#555;border-radius:4px;padding:4px 12px;font-size:11px;cursor:pointer;}
-.cs-modal{background:#fff;width:680px;max-height:82vh;border-radius:10px;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.25);overflow:hidden;}
-.cs-hdr{background:#1a2e4a;padding:11px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-.cs-hdr-l{display:flex;align-items:center;gap:9px;}
-.cs-hdr-icon{width:28px;height:28px;border-radius:5px;background:#e8a020;display:flex;align-items:center;justify-content:center;font-size:14px;}
-.cs-htitle{font-size:13px;font-weight:700;color:#fff;} .cs-hsub{font-size:10px;color:rgba(255,255,255,.45);margin-top:1px;}
-.cs-close{width:26px;height:26px;border-radius:4px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);cursor:pointer;color:#fff;font-size:13px;}
-.cs-close:hover{background:#dc3545;border-color:#dc3545;}
-.cs-bar{background:#f5f7fc;border-bottom:1px solid #e0e5f0;padding:7px 14px;display:flex;align-items:center;gap:7px;flex-shrink:0;}
-.cs-srch{flex:1;border:1px solid #d4dbe8;border-radius:4px;padding:3px 9px;font-size:11px;outline:none;height:27px;}
-.cs-srch:focus{border-color:#e8a020;}
-.cs-tbtn{border:1px solid #d4dbe8;background:#fff;border-radius:4px;padding:2px 9px;font-size:11px;font-weight:600;cursor:pointer;height:27px;color:#4a5568;}
-.cs-tbtn:hover{background:#1a2e4a;color:#fff;border-color:#1a2e4a;}
-.cs-badge{background:#e8a020;color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;margin-left:auto;}
-.cs-lhdr{display:grid;grid-template-columns:26px 1fr 70px 85px;gap:7px;align-items:center;padding:5px 14px;background:#eef1f7;border-bottom:1px solid #d4dbe8;flex-shrink:0;}
-.cs-lhdr span{font-size:10px;font-weight:700;color:#6b7a99;text-transform:uppercase;letter-spacing:.5px;}
-.cs-list{overflow-y:auto;flex:1;}
-.cs-row{display:grid;grid-template-columns:26px 1fr 70px 85px;gap:7px;align-items:center;padding:4px 14px;border-bottom:1px solid #f0f2f8;}
-.cs-row:hover{background:#fef9f0;} .cs-row.off{opacity:.4;}
-.cs-rnum{font-size:10px;color:#b0bbd4;font-weight:600;text-align:center;}
-.cs-rlbl{font-size:11.5px;color:#1a2e4a;font-weight:500;}
-.toggle{position:relative;width:32px;height:17px;flex-shrink:0;}
-.toggle input{opacity:0;width:0;height:0;}
-.toggle-track{position:absolute;inset:0;border-radius:8px;background:#d4dbe8;cursor:pointer;transition:background .18s;}
-.toggle input:checked+.toggle-track{background:#e8a020;}
-.toggle-track::after{content:"";position:absolute;width:13px;height:13px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left .18s;}
-.toggle input:checked+.toggle-track::after{left:17px;}
-.cs-winp{border:1px solid #d4dbe8;border-radius:3px;padding:2px 6px;font-size:11px;color:#1a2e4a;width:100%;outline:none;height:23px;text-align:right;}
-.cs-winp:focus{border-color:#e8a020;}
-.cs-ftr{background:#f5f7fc;border-top:1px solid #e0e5f0;padding:9px 14px;display:flex;align-items:center;gap:7px;flex-shrink:0;}
-.cs-finfo{font-size:10px;color:#8b99b5;} .cs-finfo strong{color:#e8a020;}
-.cs-cancel{margin-left:auto;border:1px solid #d4dbe8;background:#fff;border-radius:4px;padding:4px 14px;font-size:11px;font-weight:600;cursor:pointer;color:#4a5568;}
-.cs-reset{border:1px solid #ffc107;background:#fff8e1;border-radius:4px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;color:#856404;}
-.cs-reset:hover{background:#ffc107;color:#fff;}
-.cs-save{border:none;background:#1a2e4a;border-radius:4px;padding:4px 16px;font-size:11px;font-weight:700;cursor:pointer;color:#fff;}
-.cs-save:hover{background:#e8a020;}
-.msg-box{background:#fff;border-radius:8px;padding:20px 24px;min-width:280px;max-width:440px;box-shadow:0 16px 48px rgba(0,0,0,.25);}
-.msg-title{font-size:13px;font-weight:700;color:#1a2e4a;margin-bottom:9px;}
-.msg-text{font-size:12px;color:#4a5568;margin-bottom:16px;line-height:1.5;}
-.msg-btns{display:flex;justify-content:flex-end;gap:7px;}
-.msg-ok{border:none;background:#1a2e4a;color:#fff;border-radius:4px;padding:4px 18px;font-size:11px;font-weight:700;cursor:pointer;}
-.msg-ok:hover{background:#e8a020;}
-.msg-yes{border:none;background:#198754;color:#fff;border-radius:4px;padding:4px 18px;font-size:11px;font-weight:700;cursor:pointer;}
-.msg-yes:hover{background:#146c43;}
-.msg-no{border:1px solid #d4dbe8;background:#fff;color:#4a5568;border-radius:4px;padding:4px 18px;font-size:11px;font-weight:600;cursor:pointer;}
-.msg-no:hover{background:#f0f2f8;}
-.toasts{position:fixed;bottom:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:5px;}
-.toast{background:#1a2e4a;color:#fff;padding:7px 14px;border-radius:5px;font-size:12px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.22);border-left:4px solid #e8a020;animation:tin .18s ease;}
-.toast.err{border-color:#dc3545;background:#4a1c20;}
-@keyframes tin{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
-/* API CONFIG MODAL */
-.cfg-modal{background:#fff;border-radius:10px;width:520px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;}
-.cfg-hdr{background:#1a2e4a;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;}
-.cfg-title{font-size:13px;font-weight:700;color:#fff;}
-.cfg-close{width:26px;height:26px;border-radius:4px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);cursor:pointer;color:#fff;font-size:13px;}
-.cfg-close:hover{background:#dc3545;}
-.cfg-body{padding:16px;}
-.cfg-row{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;}
-.cfg-lbl{font-size:11px;font-weight:600;color:#1a2e4a;}
-.cfg-hint{font-size:10px;color:#8b99b5;margin-top:2px;}
-.cfg-inp{border:1px solid #d4dbe8;border-radius:4px;padding:5px 10px;font-size:12px;height:32px;outline:none;width:100%;}
-.cfg-inp:focus{border-color:#e8a020;box-shadow:0 0 0 2px rgba(232,160,32,.15);}
-.cfg-status{padding:7px 12px;border-radius:5px;font-size:11px;font-weight:600;}
-.cfg-ok{background:#d1fae5;color:#065f46;}
-.cfg-fail{background:#fee2e2;color:#991b1b;}
-.cfg-testing{background:#fef3e0;color:#856404;}
-.cfg-ftr{padding:10px 16px;border-top:1px solid #e0e5f0;display:flex;gap:8px;justify-content:flex-end;background:#f5f7fc;}
-.cfg-test{border:1px solid #0d6efd;background:#fff;color:#0d6efd;border-radius:4px;padding:4px 14px;font-size:11px;font-weight:600;cursor:pointer;}
-.cfg-test:hover{background:#0d6efd;color:#fff;}
-.cfg-save{border:none;background:#1a2e4a;color:#fff;border-radius:4px;padding:4px 16px;font-size:11px;font-weight:700;cursor:pointer;}
-.cfg-save:hover{background:#e8a020;}
-.cfg-cancel{border:1px solid #d4dbe8;background:#fff;color:#555;border-radius:4px;padding:4px 12px;font-size:11px;cursor:pointer;}
-`;
 
 // ════════════════════════════════════════════════════════════════
 //  MAIN COMPONENT
@@ -390,6 +238,10 @@ export default function ItemMaster() {
         MulipleMRP:!!com0.MultiMRP, MirrorTable:0,
         LandingCostCompare:!!main0.LandingCostCompare,
         PurchaseProfitSaleRateChange:!!main0.PurchaseProfitSaleRateChange,
+        univercell:!!main0.univercell,
+        MultipleUOMBilling:!!main0.MultipleUOMBilling,
+        GroupCommission:!!main0.GroupCommission,
+        subwebcategory:!!main0.MobilePrint3Inch,
         Ecotech:!!main0.Ecotech,
         Productcodeautogen:!!com0.PCode_Auto,
         Productcodedigit: com0.PCode_Digits || 0,
@@ -401,6 +253,7 @@ export default function ItemMaster() {
                CommonCompanyDiffStock:false,SupplierMulitipleAllow:false,BranchSaleRate:false,
                MulipleMRP:false,MirrorTable:0,LandingCostCompare:false,
                PurchaseProfitSaleRateChange:false,Ecotech:false,
+               univercell:false,MultipleUOMBilling:false,GroupCommission:false,subwebcategory:false,
                Productcodeautogen:false,Productcodedigit:0,Productcodeprefix:"",menudata:[] };
     }
   });
@@ -412,6 +265,7 @@ export default function ItemMaster() {
     catch { return DEFAULT_COLS; }
   });
   const [showCS, setShowCS] = useState(false);
+  const [showCfg, setShowCfg] = useState(false);
   const [draft, setDraft]   = useState([]);
   const [csSrch, setCsSrch] = useState("");
 
@@ -429,11 +283,7 @@ export default function ItemMaster() {
   const [ldMsg,   setLdMsg]   = useState("Loading...");
   const [toasts,  setToasts]  = useState([]);
 
-  // ── API Config modal state ──
-  const [showCfg,    setShowCfg]    = useState(false);
-  const [cfgUrl,     setCfgUrl]     = useState(BASE_URL); // initialized from BASE_URL constant
-  const [cfgStatus,  setCfgStatus]  = useState(null); // null | "testing" | "ok" | "fail"
-  const [cfgMsg,     setCfgMsg]     = useState("");
+ 
 
   // ── Dropdowns ──
   const [brandL, setBrandL] = useState([]);
@@ -457,6 +307,9 @@ export default function ItemMaster() {
   const [unitRows, setUnitRows] = useState([]);
   const [bsrOpen,  setBsrOpen]  = useState(false);
   const [bsrRows,  setBsrRows]  = useState([]);
+  // Group Commission (mirrors jQuery btnsave1: /ItemMaster/InsertGroupCommission)
+  const [gcOpen,   setGcOpen]   = useState(false);
+  const [gcRows,   setGcRows]   = useState([]);
   const [tnOpen,   setTnOpen]   = useState(false);
   const [tnVal,    setTnVal]    = useState("");
   const [imgOpen,  setImgOpen]  = useState(false);
@@ -470,35 +323,7 @@ export default function ItemMaster() {
   const idCtr = useRef(0);
 
   // ── Toast ──
-  // ── API Config helpers ──
-  const testApiConnection = async () => {
-    const testBase = (cfgUrl || BASE_URL).replace(/\/$/, "");
-    const testPath = testBase + "/ItemMaster/SelectItemMaster";
-    setCfgStatus("testing"); setCfgMsg("Testing connection...");
-    try {
-      const res = await fetch(testPath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ Comid:"1", Startindex:-1, PageCount:1, Keyword:"", Column:"" }),
-      });
-      if (res.status === 404) {
-        setCfgStatus("fail");
-        setCfgMsg(`❌ 404 Not Found — the path ${testPath} does not exist on server. Check BASE_URL.`);
-      } else if (res.status === 401 || res.status === 403) {
-        setCfgStatus("ok");
-        setCfgMsg("✅ Server reached (auth required — login first)");
-      } else if (res.ok || res.status < 500) {
-        setCfgStatus("ok");
-        setCfgMsg(`✅ Server reachable (HTTP ${res.status}) — connection OK`);
-      } else {
-        setCfgStatus("fail");
-        setCfgMsg(`⚠️ Server error HTTP ${res.status}`);
-      }
-    } catch (err) {
-      setCfgStatus("fail");
-      setCfgMsg(`❌ Cannot reach server: ${err.message}. Check URL and CORS.`);
-    }
-  };
+  
 
   const saveCfgUrl = () => {
     // Since BASE_URL is a constant in this file, to change the server
@@ -558,6 +383,10 @@ export default function ItemMaster() {
   }, [sess.Comid, toast]);
 
   // ── Load dropdowns ──
+  // Mirrors jQuery: BrandList → /Brand/SelectBrand, CategoryList → /Category/SelectCategory,
+  //   DepartmentList → /Department/SelectDepartment, SupplierList → /Supplier/GetSupplier,
+  //   UOMList → /UOM/SelectUOM, LocationList → /Location/SelectLocation
+  // All use data: '{"Comid":'+Comid+'}'  → POST body
   const loadDropdowns = useCallback(async () => {
     const [br,ca,de,su,uo,lo] = await Promise.all([
       api("/Brand/SelectBrand",           { Comid:sess.Comid }),
@@ -573,6 +402,7 @@ export default function ItemMaster() {
       toast(`❌ 404 Not Found — check BASE_URL in code. Current: "${BASE_URL}"`, true);
       return;
     }
+    // jQuery: getdata = data.data  (data is the ResponseViewModel, .data is Data property)
     if (!br._netErr && br.data) setBrandL(br.data);
     if (!ca._netErr && ca.data) setCatL(ca.data);
     if (!de._netErr && de.data) { setDeptL(de.data); setDeptAll(de.data); }
@@ -582,6 +412,10 @@ export default function ItemMaster() {
   }, [sess.Comid, toast]);
 
   // ── Load Item Master ──
+  // Mirrors jQuery methods.loadItemMaster(Startindex, PageCount, Keyword, Column, loadstatus)
+  // URL: "/ItemMaster/SelectItemMaster"
+  // Headers: { 'Download': "0" }
+  // Body:    { Comid, Startindex, PageCount, Keyword, Column }
   const loadItems = useCallback(async (startIdx, pageCnt, keyword="", column="", isInit=false) => {
     setLoading(true); setLdMsg("Loading Item Master...");
     const res = await api(
@@ -595,23 +429,30 @@ export default function ItemMaster() {
       return;
     }
     if (res._netErr) { toast(`❌ Cannot reach server: ${res.message} — BASE_URL="${BASE_URL}"`, true); return; }
-    if (res.redis === false) { window.alert("Session expired."); window.location.href="/Login"; return; }
+    // mirrors jQuery: if (data.redis == false) → alert + redirect
+    if (res.redis === false) { window.alert("Already Login Another User Please Login Again!!!"); window.location.href="/Login"; return; }
     if (res.ok === false && !res.data) { toast(`⚠️ ${res.message || "Failed to load data"}`, true); return; }
     const arr = Array.isArray(res.data) ? res.data : Array.isArray(res) ? res : [];
+    // mirrors jQuery: if loadstatus==1 && Keyword=="" → use data.Count for pagination
     if (isInit) setTotCnt(res.Count || arr.length);
     setRows(arr.map(fmtRow));
     setPage(1);
   }, [sess.Comid, toast]);
 
   // ── Product Auto Gen ──
+  // Mirrors jQuery ServiceCallById("/ItemMaster/MaxProductCode", ...) → objlist = Data1
+  // C# MaxProductCode returns ResponseViewModel; MaxProductCode1 returns ro.Data1 directly.
+  // We call MaxProductCode and read .Data1 (the max code integer).
   const autoGen = useCallback(async (currentCode) => {
     if (!sess.Productcodeautogen || String(currentCode||"").trim()) return null;
     const res = await api("/ItemMaster/MaxProductCode", { Comid:sess.Comid });
     if (res._netErr) return null;
-    const max = Number(res) || 0;
-    return sess.Productcodedigit > 0
-      ? sess.Productcodeprefix + zp(max, sess.Productcodedigit)
-      : sess.Productcodeprefix ? sess.Productcodeprefix + max : String(max);
+    // C# MaxProductCode: if IsSuccess → returns ResponseViewModel; Data1 holds the max code
+    // MaxProductCode1 returns ro.Data1 raw. Either way handle both:
+    const max = Number(res.Data1 ?? res) || 0;
+    if (sess.Productcodedigit > 0)
+      return sess.Productcodeprefix + zp(max, sess.Productcodedigit);
+    return sess.Productcodeprefix ? sess.Productcodeprefix + max : String(max);
   }, [sess]);
 
   // ── INIT ──
@@ -620,12 +461,22 @@ export default function ItemMaster() {
       await loadColCfg();
       await loadDropdowns();
       await loadItems(-1, 20, "", "", true);
+      // mirrors jQuery: if opened as a popup, pre-fill ProductCode/ProductName from sessionStorage
+      const popVal  = sessionStorage.getItem("POPValue")  || "";
+      const popVal1 = sessionStorage.getItem("POPValue1") || "";
+      if (popVal || popVal1) {
+        setForm(p => ({
+          ...p,
+          ...(popVal  ? { ProductCode: popVal  } : {}),
+          ...(popVal1 ? { ProductName: popVal1 } : {}),
+        }));
+      }
     })();
   // eslint-disable-next-line
   }, []);
 
   // ── KEYBOARD SHORTCUTS ──
-  const anyOpen = msgState || pw || ddPop || bcOpen || unitOpen || bsrOpen || tnOpen || imgOpen || showCS;
+  const anyOpen = msgState || pw || ddPop || bcOpen || unitOpen || bsrOpen || gcOpen || tnOpen || imgOpen || showCS;
   useEffect(() => {
     const onKey = e => {
       if (anyOpen) return;
@@ -639,6 +490,7 @@ export default function ItemMaster() {
       if (e.key==="F9")     { e.preventDefault(); handleBcOpen(); }
       if (e.key==="F12")    { e.preventDefault(); openCS(); }
       if (e.key==="Delete") { doDelete(); }
+      if (e.ctrlKey && e.key==="q") { e.preventDefault(); handleImgOpen(); }
       if (e.key==="Escape") { e.preventDefault(); doConfirm("Do You Want To Quit Page?", ()=>{ window.location.href="/Login/Home"; }); }
     };
     window.addEventListener("keydown", onKey);
@@ -650,9 +502,10 @@ export default function ItemMaster() {
   const onChange = e => {
     const { name, value, type, checked } = e.target;
     let nf = { ...form, [name]: type==="checkbox" ? checked : value };
-    if (["PurchaseRate","GST","CESS","TransPer","MRP","ProfitPer"].includes(name)) nf = { ...nf, ...calc(nf) };
-    if (name==="SalesRate")  { if (!nf.LandingCost) nf={ ...nf, ...calc(nf) }; nf=calcFromSR(nf); }
-    if (name==="ProfitAmt")  { nf=calcFromPA(nf); nf={ ...nf, ...calc(nf) }; }
+    const isNew = editId === null;
+    if (["PurchaseRate","GST","CESS","TransPer","MRP","ProfitPer"].includes(name)) nf = { ...nf, ...calc(nf, sess, isNew) };
+    if (name==="SalesRate")  { if (!nf.LandingCost) nf={ ...nf, ...calc(nf, sess, isNew) }; nf=calcFromSR(nf); }
+    if (name==="ProfitAmt")  { nf=calcFromPA(nf); nf={ ...nf, ...calc(nf, sess, isNew) }; }
     setVErr(""); setForm(nf);
   };
 
@@ -691,15 +544,34 @@ export default function ItemMaster() {
     setVErr(""); return true;
   };
 
-  // ── SAVE (F1) ──
+  // ── SAVE headers — mirrors jQuery InsertItemMaster headers exactly ──
+  // jQuery: { 'Comid', 'BranchSaleRate', 'CommonCompany', 'CommonCompanyDiffStock',
+  //           'SupplierMulitipleAllow', 'MulipleMRP', 'MirrorTable', 'Tamil', 'IdComList' }
+  // Note: jQuery also sends 'ApiType' only in Excel upload path (not in regular SaveItemMaster)
   const saveHdrs = {
-    "Comid":String(sess.Comid),"BranchSaleRate":String(sess.BranchSaleRate),
-    "CommonCompany":String(sess.CommonCompany),"CommonCompanyDiffStock":String(sess.CommonCompanyDiffStock),
-    "SupplierMulitipleAllow":String(sess.SupplierMulitipleAllow),"MulipleMRP":String(sess.MulipleMRP),
-    "MirrorTable":String(sess.MirrorTable),"Tamil":String(sess.Tamil),"IdComList":String(sess.IdComList),
+    "Comid":                  String(sess.Comid),
+    "BranchSaleRate":         String(sess.BranchSaleRate),
+    "CommonCompany":          String(sess.CommonCompany),
+    "CommonCompanyDiffStock": String(sess.CommonCompanyDiffStock),
+    "SupplierMulitipleAllow": String(sess.SupplierMulitipleAllow),
+    "MulipleMRP":             String(sess.MulipleMRP),
+    "MirrorTable":            String(sess.MirrorTable),
+    "Tamil":                  String(sess.Tamil),
+    "IdComList":              String(sess.IdComList),
+    "ApiType":                "0",
   };
+  // ── SAVE (F1) ──
+  // Mirrors jQuery methods.SaveItemMaster()
   const doSave = () => {
     if (!validate(form)) return;
+
+    // mirrors jQuery: pageadd=0 & pageedit=0 → deny all
+    if (!perm.Add && !perm.Edit) { doAlert("Page Add & Update Permission Denied !!!."); return; }
+    // mirrors jQuery: pageadd=1 & pageedit=0 → only new rows (Id == null / not yet saved)
+    if (perm.Add && !perm.Edit && editId !== null) { doAlert("Page Edit Permission Denied !!!."); return; }
+    // mirrors jQuery: pageadd=0 & pageedit=1 → only existing rows
+    if (!perm.Add && perm.Edit && editId === null) { doAlert("Page Add Permission Denied !!!."); return; }
+
     doConfirm("Do you want to Save Item Master Details?", async () => {
       setLoading(true); setLdMsg("Saving...");
       const res = await api("/ItemMaster/InsertItemMaster", [{ ...form, EditMode:1 }], saveHdrs);
@@ -707,7 +579,8 @@ export default function ItemMaster() {
       if (res._netErr) { toast(`❌ ${res.message}`, true); return; }
       if (res.ok) {
         toast("✅ " + (res.message||"Saved successfully"));
-        const nid = res.Id || (editId !== null ? editId : ++idCtr.current);
+        // C# InsertItemMaster: ro.Data2 = inserted Id (int), ro.Data1 = updated item object
+        const nid = res.Data2 || res.Id || (editId !== null ? editId : ++idCtr.current);
         if (editId !== null) {
           setRows(p => p.map(r => r.Id===editId ? { ...form, Id:editId, EditMode:0 } : r));
         } else {
@@ -715,6 +588,12 @@ export default function ItemMaster() {
         }
         const code = form.ProductCode;
         setForm(mkEmpty()); setSelId(null); setEditId(null); setVErr("");
+        // mirrors jQuery: sessionStorage POPStatus handling after save
+        if (sessionStorage.getItem("POPStatus") === "ON") {
+          sessionStorage.setItem("POPValue", nid);
+          sessionStorage.setItem("POPStatus", "OFF");
+          try { window.parent.$('.ui-dialog-content:visible').dialog('close'); } catch {}
+        }
         const genCode = await autoGen(code);
         if (genCode) setForm(p => ({ ...p, ProductCode:genCode }));
       } else {
@@ -725,14 +604,18 @@ export default function ItemMaster() {
   };
 
   // ── DELETE ──
+  // Mirrors jQuery: url: "/ItemMaster/DeleteItemMaster", data: '{"Id":'+Id+',"Comid":'+Comid+',"MirrorTable":'+MirrorTable+'}'
+  // C# signature: DeleteItemMaster(Int32 Id, Int32 Comid, int MirrorTable) — all query string params
+  // IdComList goes as a header (C# reads Request.Headers.GetValues("IdComList"))
   const doDelete = () => {
     if (selId===null) { toast("Select a row to delete", true); return; }
     if (!perm.Delete) { toast("Delete Permission Denied", true); return; }
     const row = rows.find(r => r.Id===selId);
     doConfirm(`Wish to Delete "${row?.ProductName||selId}"?`, async () => {
       setLoading(true); setLdMsg("Deleting...");
-      const res = await api("/ItemMaster/DeleteItemMaster",
-        { Id:selId, Comid:sess.Comid, MirrorTable:sess.MirrorTable },
+      // C# reads Id, Comid, MirrorTable from query string (not body) for this endpoint
+      const qs = `?Id=${selId}&Comid=${sess.Comid}&MirrorTable=${sess.MirrorTable}`;
+      const res = await api("/ItemMaster/DeleteItemMaster" + qs, {},
         { "IdComList":String(sess.IdComList) });
       setLoading(false);
       if (res._netErr) { toast(`❌ ${res.message}`, true); return; }
@@ -770,6 +653,10 @@ export default function ItemMaster() {
   };
 
   // ── EXCEL UPLOAD (F7) ──
+  // Mirrors jQuery ExcelUpload function:
+  //   url: "/ItemMaster/InsertItemMaster", headers: { Comid, BranchSaleRate, CommonCompany,
+  //     CommonCompanyDiffStock, SupplierMulitipleAllow, MulipleMRP, MirrorTable, Tamil, IdComList }
+  // Note: jQuery Excel upload also adds 'ApiType' header (not present in regular save)
   const doExcelUpload = () => {
     const inp = document.createElement("input"); inp.type="file"; inp.accept=".xlsx,.csv";
     inp.onchange = async e => {
@@ -784,7 +671,9 @@ export default function ItemMaster() {
       if (!records.length) { toast("No valid ProductName rows in file", true); return; }
       doConfirm(`Import ${records.length} records?`, async () => {
         setLoading(true); setLdMsg("Uploading...");
-        const res = await api("/ItemMaster/InsertItemMaster", records, saveHdrs);
+        // jQuery Excel upload includes ApiType=0 in headers
+        const uploadHdrs = { ...saveHdrs, "ApiType":"0" };
+        const res = await api("/ItemMaster/InsertItemMaster", records, uploadHdrs);
         setLoading(false);
         if (res._netErr) { toast(`❌ ${res.message}`, true); return; }
         if (res.ok) { toast("✅ " + (res.message||"Upload successful")); await loadItems(-1,20,"","",true); }
@@ -807,9 +696,11 @@ export default function ItemMaster() {
     setBarcodes(p=>[...p,{Barcode:bcNew.trim(),Id:null}]); setBcNew("");
   };
   const saveBc = async () => {
+    // Mirrors jQuery btnsave2: headers { 'ItemId': value, 'MComid': MComid, 'MirrorTable': MirrorTable, 'IdComList': IdComList }
     setLoading(true); setLdMsg("Saving barcodes...");
     const res = await api("/ItemMaster/InsertItemBarcode", barcodes,
-      { "ItemId":String(selId),"MComid":String(sess.MComid),"MirrorTable":String(sess.MirrorTable),"IdComList":String(sess.IdComList) });
+      { "ItemId":String(selId), "MComid":String(sess.MComid),
+        "MirrorTable":String(sess.MirrorTable), "IdComList":String(sess.IdComList) });
     setLoading(false);
     if (res._netErr) { toast(`❌ ${res.message}`, true); return; }
     if (res.ok) { toast("✅ " + (res.message||"Barcodes saved")); setBcOpen(false); }
@@ -828,6 +719,24 @@ export default function ItemMaster() {
     setLoading(false);
     if (res._netErr) { toast(`❌ ${res.message}`, true); return; }
     if (res.ok) { toast("✅ " + (res.message||"Unit saved")); setUnitOpen(false); }
+    else toast(`❌ ${res.message||"Failed"}`, true);
+  };
+
+  // ── GROUP COMMISSION ──
+  // Mirrors jQuery btnsave1: url: "/ItemMaster/InsertGroupCommission"
+  // headers: { 'ItemId': value, 'MComid': MComid, 'MirrorTable': MirrorTable }
+  const handleGcOpen = async () => {
+    if (!selId) { toast("Select a row first", true); return; }
+    const res = await api("/ItemMaster/SelectGroupCommission", { Id:selId });
+    setGcRows(!res._netErr && res.data ? res.data : []); setGcOpen(true);
+  };
+  const saveGc = async () => {
+    setLoading(true); setLdMsg("Saving Group Commission...");
+    const res = await api("/ItemMaster/InsertGroupCommission", gcRows,
+      { "ItemId":String(selId), "MComid":String(sess.MComid), "MirrorTable":String(sess.MirrorTable) });
+    setLoading(false);
+    if (res._netErr) { toast(`❌ ${res.message}`, true); return; }
+    if (res.ok) { toast("✅ " + (res.message||"Saved")); setGcOpen(false); }
     else toast(`❌ ${res.message||"Failed"}`, true);
   };
 
@@ -877,10 +786,12 @@ export default function ItemMaster() {
     } else toast(`❌ ${res.message||"Failed"}`, true);
   };
   const uploadImgFile = e => {
+    // Mirrors jQuery ImageUpload: uploads to /ItemMaster/ImageUpload
+    // C# ImageUpload saves file and returns the filename (guid + ext)
     const file = e.target.files[0]; if (!file) return;
     const data = new FormData(); data.append("MyImages", file);
-    fetch(mkUrl("/Itemmaster/UploadFile"), { method:"POST", body:data })
-      .then(r=>r.text()).then(fname=>setImgUrl(fname))
+    fetch(mkUrl("/ItemMaster/ImageUpload"), { method:"POST", body:data })
+      .then(r=>r.text()).then(fname=>setImgUrl(fname.replace(/^"|"$/g,"")))
       .catch(()=>toast("Image upload failed", true));
   };
 
@@ -943,7 +854,6 @@ export default function ItemMaster() {
   // ════════════════════════════════════════════════════════════════
   return (
     <>
-      <style>{CSS}</style>
       <div className="im">
 
         {/* HEADER */}
@@ -1083,6 +993,7 @@ export default function ItemMaster() {
           <span className="fsep">|</span>
           <button className="fb"     onClick={sess.Ecotech ? ()=>window.location.href="Customer/GroupItems" : handleBsrOpen} disabled={!selId&&!sess.Ecotech}>🏪 F5-{sess.Ecotech?"GroupItems":"BranchRate"}</button>
           <span className="fsep">|</span>
+          {sess.GroupCommission&&<><button className="fb" onClick={handleGcOpen} disabled={!selId}>💰 GrpCommission</button><span className="fsep">|</span></>}
           <button className="fb"     onClick={handleTnOpen}    disabled={!selId}>🌐 F6-TamilName</button>
           <span className="fsep">|</span>
           <button className="fb ex"  onClick={()=>askPw("F7 Password",doExcelUpload)} disabled={loading}>📤 F7-Excel↑</button>
@@ -1095,10 +1006,7 @@ export default function ItemMaster() {
           <span className="fsep">|</span>
           <button className="fb cf"  onClick={openCS}>⚙️ F12</button>
           <span className="fsep">|</span>
-          <button className="fb" style={{color:"#e8a020",fontWeight:700,borderColor:"#f0c870",border:"1px solid"}}
-            onClick={()=>{setCfgStatus(null);setCfgMsg("");setShowCfg(true);}}>
-            🌐 Config
-          </button>
+         
         </div>
 
         {/* ── DROPDOWN POPUP ── */}
@@ -1112,7 +1020,7 @@ export default function ItemMaster() {
                 placeholder={`Search ${ddPop.title}...`}/>
               <div className="dd-list">
                 {ddFilt.length===0
-                  ?<div className="dd-empty">No results</div>
+                  ?<div className="dd-empty">No result s</div>
                   :ddFilt.map(item=>(
                     <div key={item[ddPop.idKey]}
                       className={`dd-item${String(form[ddPop.fId])===String(item[ddPop.idKey])?" hi":""}`}
@@ -1214,6 +1122,40 @@ export default function ItemMaster() {
               <div className="mftr">
                 <button className="mbtn-cancel" onClick={()=>setBsrOpen(false)}>Cancel</button>
                 <button className="mbtn-save"   onClick={saveBsr} disabled={loading}>💾 Save</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── GROUP COMMISSION — mirrors jQuery GroupCommissionWindow + btnsave1 ── */}
+        {gcOpen&&sess.GroupCommission&&(
+          <div className="ov" onClick={e=>{if(e.target===e.currentTarget)setGcOpen(false);}}>
+            <div className="bsr-modal">
+              <div className="dd-hdr">💰 Group Commission — Item #{selId}
+                <button onClick={()=>setGcOpen(false)}>✕</button></div>
+              <div className="unit-body">
+                <table className="utbl">
+                  <thead><tr><th>Group Name</th><th>Commission %</th><th>Active</th><th style={{width:32}}></th></tr></thead>
+                  <tbody>
+                    {gcRows.length===0
+                      ?<tr><td colSpan={4} style={{textAlign:"center",color:"#b0bbd4",padding:14,fontSize:11}}>No group commissions</td></tr>
+                      :gcRows.map((r,i)=>(
+                        <tr key={i}>
+                          <td><input value={r.GroupName||""} onChange={e=>setGcRows(p=>p.map((x,j)=>j===i?{...x,GroupName:e.target.value}:x))}/></td>
+                          <td><input type="number" step="0.01" value={r.Commisssion||""} onChange={e=>setGcRows(p=>p.map((x,j)=>j===i?{...x,Commisssion:e.target.value}:x))}/></td>
+                          <td><select value={r.GrpActive||"0"} onChange={e=>setGcRows(p=>p.map((x,j)=>j===i?{...x,GrpActive:e.target.value}:x))}>
+                            <option value="0">No</option><option value="1">Yes</option></select></td>
+                          <td><button className="bc-del" onClick={()=>setGcRows(p=>p.filter((_,j)=>j!==i))}>🗑</button></td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                <button className="bc-add" style={{marginTop:7}}
+                  onClick={()=>setGcRows(p=>[...p,{GroupName:"",Commisssion:"",GrpActive:"1"}])}>+ Add Row</button>
+              </div>
+              <div className="mftr">
+                <button className="mbtn-cancel" onClick={()=>setGcOpen(false)}>Cancel</button>
+                <button className="mbtn-save"   onClick={saveGc} disabled={loading}>💾 Save</button>
               </div>
             </div>
           </div>
@@ -1366,83 +1308,7 @@ export default function ItemMaster() {
         {/* ── TOASTS ── */}
         <div className="toasts">
           {toasts.map(t=><div key={t.id} className={`toast${t.err?" err":""}`}>{t.m}</div>)}
-        </div>
-
-        {/* ═══════ API CONFIG MODAL ═══════ */}
-        {showCfg&&(
-          <div className="ov z30" onClick={e=>{if(e.target===e.currentTarget)setShowCfg(false);}}>
-            <div className="cfg-modal">
-              <div className="cfg-hdr">
-                <span className="cfg-title">🌐 API Server Configuration</span>
-                <button className="cfg-close" onClick={()=>setShowCfg(false)}>✕</button>
-              </div>
-              <div className="cfg-body">
-
-                {/* Current active URL */}
-                <div style={{background:"#e8f5e9",border:"1px solid #a5d6a7",borderRadius:5,padding:"10px 12px",marginBottom:12,fontSize:11}}>
-                  <div style={{fontWeight:700,color:"#1b5e20",marginBottom:4}}>✅ Active Server URL (BASE_URL constant in code):</div>
-                  <code style={{color:"#0d4fa8",wordBreak:"break-all",fontSize:12,fontWeight:700}}>{BASE_URL || "(empty — same origin as React app)"}</code>
-                  <div style={{marginTop:6,color:"#2e7d32",fontSize:10}}>
-                    All API calls go to this server. To change it, edit <code>const BASE_URL</code> at the top of ItemMaster.jsx
-                  </div>
-                </div>
-
-                {/* Test input */}
-                <div className="cfg-row">
-                  <label className="cfg-lbl">Test a different URL (does not save — edit code to change permanently)</label>
-                  <input className="cfg-inp" autoFocus
-                    value={cfgUrl}
-                    onChange={e=>{setCfgUrl(e.target.value);setCfgStatus(null);setCfgMsg("");}}
-                    onKeyDown={e=>{if(e.key==="Enter")testApiConnection();}}
-                    placeholder={BASE_URL || "e.g. http://13.200.71.164:9001"}/>
-                  <div className="cfg-hint">
-                    Enter a URL here to test connectivity. This does NOT change the active server.
-                    <br/>To permanently change: edit <strong>line 16</strong> in ItemMaster.jsx → <code>const BASE_URL = "your-url";</code>
-                  </div>
-                </div>
-
-                {/* Quick presets */}
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-                  {[BASE_URL,"http://localhost:5000","http://localhost:44300"].filter(Boolean).map(p=>(
-                    <button key={p}
-                      style={{border:"1px solid #d4dbe8",background:"#f5f7fc",borderRadius:3,padding:"2px 8px",fontSize:10,cursor:"pointer",color:"#4a5568"}}
-                      onClick={()=>{setCfgUrl(p);setCfgStatus(null);setCfgMsg("");}}>
-                      {p}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Test status */}
-                {cfgStatus&&(
-                  <div className={`cfg-status${cfgStatus==="ok"?" cfg-ok":cfgStatus==="fail"?" cfg-fail":" cfg-testing"}`}>
-                    {cfgMsg}
-                  </div>
-                )}
-
-                {/* Instructions */}
-                <div style={{marginTop:12,padding:"10px 12px",background:"#fffbf0",border:"1px solid #ffe4a0",borderRadius:5,fontSize:11,color:"#6b4c00",lineHeight:1.6}}>
-                  <strong>If you see 404 errors:</strong><br/>
-                  1. Your React app and .NET server are on different ports/domains.<br/>
-                  2. Enter your .NET server URL above and click <strong>Test</strong>.<br/>
-                  3. Or add a proxy in <code>vite.config.js</code> / <code>package.json</code>.<br/>
-                  <strong>Proxy example (vite.config.js):</strong><br/>
-                  <code style={{fontSize:10}}>proxy: {"{"} '/ItemMaster': 'http://localhost:5000', '/Brand': 'http://localhost:5000' {"}"}</code>
-                </div>
-              </div>
-
-              <div className="cfg-ftr">
-                <button className="cfg-cancel" onClick={()=>setShowCfg(false)}>Cancel</button>
-                <button className="cfg-test"   onClick={testApiConnection}
-                  disabled={cfgStatus==="testing"}>
-                  {cfgStatus==="testing"?"Testing…":"🔌 Test Connection"}
-                </button>
-                <button className="cfg-save"   onClick={saveCfgUrl}>
-                  💾 Save & Reload
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>  
 
       </div>
     </>

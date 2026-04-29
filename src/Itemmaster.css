@@ -1,4 +1,3 @@
-const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',sans-serif;}
 html,body,#root{height:100%;margin:0;padding:0;}
@@ -163,4 +162,26 @@ html,body,#root{height:100%;margin:0;padding:0;}
 .toast{background:#1a2e4a;color:#fff;padding:7px 14px;border-radius:5px;font-size:12px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.22);border-left:4px solid #e8a020;animation:tin .18s ease;}
 .toast.err{border-color:#dc3545;background:#4a1c20;}
 @keyframes tin{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
-`;
+/* API CONFIG MODAL */
+.cfg-modal{background:#fff;border-radius:10px;width:520px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;}
+.cfg-hdr{background:#1a2e4a;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;}
+.cfg-title{font-size:13px;font-weight:700;color:#fff;}
+.cfg-close{width:26px;height:26px;border-radius:4px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);cursor:pointer;color:#fff;font-size:13px;}
+.cfg-close:hover{background:#dc3545;}
+.cfg-body{padding:16px;}
+.cfg-row{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;}
+.cfg-lbl{font-size:11px;font-weight:600;color:#1a2e4a;}
+.cfg-hint{font-size:10px;color:#8b99b5;margin-top:2px;}
+.cfg-inp{border:1px solid #d4dbe8;border-radius:4px;padding:5px 10px;font-size:12px;height:32px;outline:none;width:100%;}
+.cfg-inp:focus{border-color:#e8a020;box-shadow:0 0 0 2px rgba(232,160,32,.15);}
+.cfg-status{padding:7px 12px;border-radius:5px;font-size:11px;font-weight:600;}
+.cfg-ok{background:#d1fae5;color:#065f46;}
+.cfg-fail{background:#fee2e2;color:#991b1b;}
+.cfg-testing{background:#fef3e0;color:#856404;}
+.cfg-ftr{padding:10px 16px;border-top:1px solid #e0e5f0;display:flex;gap:8px;justify-content:flex-end;background:#f5f7fc;}
+.cfg-test{border:1px solid #0d6efd;background:#fff;color:#0d6efd;border-radius:4px;padding:4px 14px;font-size:11px;font-weight:600;cursor:pointer;}
+.cfg-test:hover{background:#0d6efd;color:#fff;}
+.cfg-save{border:none;background:#1a2e4a;color:#fff;border-radius:4px;padding:4px 16px;font-size:11px;font-weight:700;cursor:pointer;}
+.cfg-save:hover{background:#e8a020;}
+.cfg-cancel{border:1px solid #d4dbe8;background:#fff;color:#555;border-radius:4px;padding:4px 12px;font-size:11px;cursor:pointer;}
+;
