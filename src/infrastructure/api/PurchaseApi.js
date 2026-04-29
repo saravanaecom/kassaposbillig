@@ -1,7 +1,7 @@
 const BASE_URL = 'http://13.200.71.164:9001/api';
 
 const DEFAULT_COMID = '34';
-const DEFAULT_TOKEN = 'eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNhcmF2YW5hMUBnbWFpbC5jb20iLCJ1c2VySWQiOiIxIiwicm9sZSI6IkFkbWluIiwic3ViIjoiMSIsIm5iZiI6MTc3MzkyMjc4NCwiaWF0IjoxNzczOTIyNzg0LCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjQ0MzAwLyIsImF1ZCI6InNlY3VyZWFwaXVzZXIiLCJleHAiOjE3NzQwMDkxODR9.EGKRlGGedits3n7ALfm175mDQvj61_QbVhJp4tuxz4s';
+const DEFAULT_TOKEN = 'eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNhcmF2YW5hMUBnbWFpbC5jb20iLCJ1c2VySWQiOiIxIiwicm9sZSI6IkFkbWluIiwic3ViIjoiMSIsIm5iZiI6MTc3NDM1MjkyNywiaWF0IjoxNzc0MzUyOTI3LCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjQ0MzAwLyIsImF1ZCI6InNlY3VyZWFwaXVzZXIiLCJleHAiOjE3NzQ0MzkzMjd9.CVmq0pRFGbkOGywolIxrWTIykV_9ubkSohyOZqPWxTA';
 
 const getComid  = () => localStorage.getItem('Comid')  || DEFAULT_COMID;
 const getMComid = () => localStorage.getItem('MComid') || localStorage.getItem('Comid') || DEFAULT_COMID;
@@ -21,7 +21,7 @@ async function postQuery(url, params = {}) {
   const query   = new URLSearchParams(params).toString();
   const fullUrl = BASE_URL + url + (query ? '?' + query : '');
   const res = await fetch(fullUrl, {
-    method: 'POST',                          // ← POST (Postman screenshot பாத்தேன்)
+    method: 'POST',                          
     headers: {
       'Content-Type':  'application/json; charset=utf-8',
       'Authorization': `Bearer ${getToken()}`,
@@ -64,7 +64,7 @@ export const PurchaseApi = {
   },
 
   async getSupplierBalance(supplierId, tillDate) {
-    const data = await postQuery('/Supplier/CurrentBalance', {
+    const data = await postQuery('/SupplierApp/CurrentBalance', {
       Id:          supplierId,
       Comid:       getComid(),
       MComid:      getMComid(),
@@ -75,7 +75,7 @@ export const PurchaseApi = {
   },
 
   async getNextPurchaseNo() {
-    const data = await postQuery('/Purchase/MaxPurchaseNo', {
+    const data = await postQuery('/PurchaseApp/MaxPurchaseNo', {
       Comid: getComid(),
     });
     if (data.ok) return { ok: true, purchaseNo: data.No };
@@ -83,9 +83,9 @@ export const PurchaseApi = {
   },
 
   async getProductByCode(code) {
-    const data = await postQuery('/ItemMaster/SelectItemMasterbyCodeId', {
+    const data = await postQuery('/ItemMasterApp/SelectItemMasterbyCodeId', {
       code,
-      Comid:     getMComid(),
+      Comid:     getMComid() || '34',
       CComid:    getComid(),
       Id:        0,
       Batchwise: 0,
@@ -94,10 +94,10 @@ export const PurchaseApi = {
   },
 
   async searchProducts(query) {
-    const data = await postQuery('/ItemMaster/SelectItemMasterList', {
-      Comid:      getMComid(),
-      CComid:     getComid(),
-      SearchText: query || '',
+    const data = await postQuery('/ItemMasterApp/GetProductList', {
+      Comid:      getMComid() || '34'
+  
+   
     });
     return { ok: true, data: parseList(data) };
   },
@@ -105,7 +105,7 @@ export const PurchaseApi = {
   async savePurchase(purchaseMaster) {
     const MainSet = JSON.parse(localStorage.getItem('Mainsetting') || '[{}]');
     const ms = MainSet[0] || {};
-    return post('/Purchase/InsertPurchase', purchaseMaster, {
+    return post('/PurchaseApp/InsertPurchase', purchaseMaster, {
       'batchstockstatus':         String(ms.BatchWiseStock ? 1 : 0),
       'ItemMasterRateEditUpdate': String(ms.PurchaseEditItemmasterupdate || false),
       'ItemMasterRateUpdate':     String(ms.PurchaseItemmasterSave || false),
@@ -122,9 +122,9 @@ export const PurchaseApi = {
   },
 
   async deletePurchase(id, stockList = []) {
-    return post('/Purchase/DeletePurchase', stockList, {
+    return post('/PurchaseApp/DeletePurchase', stockList, {
       'Year':        getFYear(),
-      'Comid':       getComid(),
+      'Comid':       getComid() || '34',
       'Id':          String(id),
       'MirrorTable': localStorage.getItem('MirrorTableOnline') || 'false',
       'UpdateId':    '',
@@ -132,19 +132,19 @@ export const PurchaseApi = {
   },
 
   async getPurchaseById(id) {
-    return postQuery('/Purchase/EditPurchase', {
+    return postQuery('/PurchaseApp/EditPurchase', {
       Id:    id,
-      Comid: getComid(),
+      Comid: getComid() || '34',
       Year:  getFYear(),
     });
   },
 
   async getPurchaseList(fromDate, toDate, supplierId = 0) {
-    return postQuery('/Purchase/SelectPurchase', {
+    return postQuery('/PurchaseApp/SelectPurchase', {
       fromdate: fromDate,
       todate:   toDate,
       Id:       supplierId,
-      Comid:    getComid(),
+      Comid:    getComid() || '34',
     });
   },
 };

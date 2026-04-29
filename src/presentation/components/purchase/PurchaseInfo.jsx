@@ -1,6 +1,6 @@
 import React from 'react';
 
-export function PurchaseInfo({ header, purchaseTypes, onHeaderChange, editMode }) {
+export function PurchaseInfo({ header, purchaseTypes, onHeaderChange, editMode,onDueDateEnter }) {
   return (
     <div className="card">
       <div className="card-header">
@@ -39,6 +39,12 @@ export function PurchaseInfo({ header, purchaseTypes, onHeaderChange, editMode }
               className="form-control"
               value={header.dueDate}
               onChange={e => onHeaderChange('dueDate', e.target.value)}
+               onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onDueDateEnter?.();   
+                }
+              }}
             />
           </div>
           <div className="form-group">

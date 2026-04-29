@@ -2,11 +2,10 @@ import React from 'react';
 import { fmt2 } from '../../../shared/helpers/index.js';
 
 export function GstSummary({ gstRows, igst }) {
-  const totalTaxable = gstRows.reduce((s, r) => s + r.taxableAmt, 0);
-  const totalCgst    = gstRows.reduce((s, r) => s + r.cgst, 0);
-  const totalSgst    = gstRows.reduce((s, r) => s + r.sgst, 0);
-  const totalIgst    = gstRows.reduce((s, r) => s + r.igstAmt, 0);
-  const totalCess    = gstRows.reduce((s, r) => s + r.cessAmt, 0);
+  const totalGst  = gstRows.reduce((s, r) => s + r.gstAmt, 0);
+  const totalCgst = gstRows.reduce((s, r) => s + r.cgst, 0);
+  const totalSgst = gstRows.reduce((s, r) => s + r.sgst, 0);
+  const totalCess = gstRows.reduce((s, r) => s + (r.cessAmt || 0), 0);
 
   return (
     <div className="card" style={{ height: '100%' }}>
@@ -16,7 +15,7 @@ export function GstSummary({ gstRows, igst }) {
           <thead>
             <tr>
               <th>GST%</th>
-              <th>Taxable</th>
+              <th>GST Amt</th>
               {igst ? (
                 <th>IGST</th>
               ) : (
@@ -37,11 +36,11 @@ export function GstSummary({ gstRows, igst }) {
               </tr>
             )}
             {gstRows.map(row => (
-              <tr key={row.taxPercent}>
-                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.taxPercent}%</td>
-                <td>{fmt2(row.taxableAmt)}</td>
+              <tr key={row.gstPer}>
+                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.gstPer}%</td>
+                <td>{fmt2(row.gstAmt)}</td>
                 {igst ? (
-                  <td>{fmt2(row.igstAmt)}</td>
+                  <td>{fmt2(row.gstAmt)}</td>
                 ) : (
                   <>
                     <td>{fmt2(row.cgst)}</td>
@@ -56,9 +55,9 @@ export function GstSummary({ gstRows, igst }) {
             <tfoot>
               <tr>
                 <td style={{ textAlign: 'center', fontWeight: 700 }}>Total</td>
-                <td>{fmt2(totalTaxable)}</td>
+                <td>{fmt2(totalGst)}</td>
                 {igst ? (
-                  <td>{fmt2(totalIgst)}</td>
+                  <td>{fmt2(totalGst)}</td>
                 ) : (
                   <>
                     <td>{fmt2(totalCgst)}</td>

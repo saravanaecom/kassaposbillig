@@ -9,12 +9,12 @@ export class PurchaseCalculator {
    * Mirrors the original JS logic from PurchaseMaster.js
    */
   static calculateItemAmount(item, taxMode = 'exclusive') {
-    const rate = parseFloat(item.purchaseRate) || 0;
-    const qty = parseFloat(item.itemQty) || 0;
-    const cdPer = parseFloat(item.cdPercent) || 0;
-    const discPer = parseFloat(item.discountPercent) || 0;
-    const taxPer = parseFloat(item.taxPercent) || 0;
-    const cessPer = parseFloat(item.cessPercent) || 0;
+    const rate = parseFloat(item.PurchaseRate) || 0;
+    const qty = parseFloat(item.ItemQty) || 0;
+    const cdPer = parseFloat(item.CDPercent) || 0;
+    const discPer = parseFloat(item.DiscountPercent) || 0;
+    const taxPer = parseFloat(item.TaxPercent) || 0;
+    const cessPer = parseFloat(item.CESSPer) || 0;
 
     let basicAmt = this.round(rate * qty, 2);
 
@@ -45,11 +45,12 @@ export class PurchaseCalculator {
 
     return {
       ...item,
-      cdAmount,
-      discountAmt: discAmt,
-      taxAmt,
-      cessAmount,
-      amount,
+      ProductTotal: basicAmt,
+      CDAmount: cdAmount,
+      DiscountAmt: discAmt,
+      TaxAmt: taxAmt,
+      CESSAmount: cessAmount,
+      Amount: amount,
     };
   }
 
@@ -59,74 +60,94 @@ export class PurchaseCalculator {
   static buildGstSummary(items, igst = false) {
     const map = {};
     for (const item of items) {
-      const slab = item.taxPercent || 0;
+      if (!item.Productcode) continue; // Skip empty rows
+      const slab = parseFloat(item.TaxPercent) || 0;
       if (!map[slab]) {
-        map[slab] = { taxPercent: slab, taxableAmt: 0, cgst: 0, sgst: 0, igstAmt: 0, cessAmt: 0 };
+        map[slab] = { gstPer: slab, taxableAmt: 0, cgst: 0, sgst: 0, igstAmt: 0, cessAmt: 0, gstAmt: 0 };
       }
-      const taxable = this.round(item.amount - item.taxAmt - item.cessAmount, 2);
+      const taxAmt = parseFloat(item.TaxAmt) || 0;
+      const cessAmt = parseFloat(item.CESSAmount) || 0;
+      const amount = parseFloat(item.Amount) || 0;
+
+      const taxable = this.round(amount - taxAmt - cessAmt, 2);
       map[slab].taxableAmt = this.round(map[slab].taxableAmt + taxable, 2);
+      map[slab].gstAmt = this.round(map[slab].gstAmt + taxAmt, 2);
       if (igst) {
-        map[slab].igstAmt = this.round(map[slab].igstAmt + item.taxAmt, 2);
+        map[slab].igstAmt = this.round(map[slab].igstAmt + taxAmt, 2);
       } else {
-        const half = this.round(item.taxAmt / 2, 2);
+        const half = this.round(taxAmt / 2, 2);
         map[slab].cgst = this.round(map[slab].cgst + half, 2);
         map[slab].sgst = this.round(map[slab].sgst + half, 2);
       }
-      map[slab].cessAmt = this.round(map[slab].cessAmt + item.cessAmount, 2);
+      map[slab].cessAmt = this.round(map[slab].cessAmt + cessAmt, 2);
     }
-    return Object.values(map).sort((a, b) => a.taxPercent - b.taxPercent);
+    return Object.values(map).sort((a, b) => a.gstPer - b.gstPer);
   }
 
   /**
    * Calculate totals for the purchase footer.
    */
   static calculateTotals(items, overrides = {}) {
-    const grossAmt = this.round(
-      items.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0),
+    const getEff = (overrideVal, calcVal) => {
+      if (overrideVal !== undefined && overrideVal !== '') {
+        const val = parseFloat(overrideVal);
+        return isNaN(val) ? 0 : val;
+      }
+      return calcVal;
+    };
+
+    const validItems = items.filter(i => i.Productcode);
+
+    const gridGross = this.round(
+      validItems.reduce((sum, i) => sum + (parseFloat(i.ProductTotal) || 0), 0),
+      2
+    );
+    const gridTax = this.round(
+      validItems.reduce((sum, i) => sum + (parseFloat(i.TaxAmt) || 0), 0),
+      2
+    );
+    const gridCess = this.round(
+      validItems.reduce((sum, i) => sum + (parseFloat(i.CESSAmount) || 0), 0),
+      2
+    );
+    const gridCd = this.round(
+      validItems.reduce((sum, i) => sum + (parseFloat(i.CDAmount) || 0), 0),
+      2
+    );
+    const gridDisc = this.round(
+      validItems.reduce((sum, i) => sum + (parseFloat(i.DiscountAmt) || 0), 0),
       2
     );
 
-    const totalTax = this.round(
-      items.reduce((sum, i) => sum + (parseFloat(i.taxAmt) || 0), 0),
-      2
-    );
+    const grossAmt  = getEff(overrides.grossAmt, gridGross);
+    const totalTax  = getEff(overrides.gstAmt, gridTax);
+    const totalCess = getEff(overrides.cessAmt, gridCess);
+    const totalCd   = getEff(overrides.cdAmt, gridCd);
+    const totalDisc = getEff(overrides.discAmt, gridDisc);
 
-    const totalCess = this.round(
-      items.reduce((sum, i) => sum + (parseFloat(i.cessAmount) || 0), 0),
-      2
-    );
-
-    const totalCd = this.round(
-      items.reduce((sum, i) => sum + (parseFloat(i.cdAmount) || 0), 0),
-      2
-    );
-
-    const totalDisc = this.round(
-      items.reduce((sum, i) => sum + (parseFloat(i.discountAmt) || 0), 0),
-      2
-    );
-
-    const transAmt = parseFloat(overrides.transAmt) || 0;
-    const otherPlus = parseFloat(overrides.otherPlus) || 0;
-    const otherSub = parseFloat(overrides.otherSub) || 0;
+    const transAmt  = getEff(overrides.transAmt, 0);
+    const otherPlus = getEff(overrides.otherPlus, 0);
+    const otherSub  = getEff(overrides.otherSub, 0);
     const tcsPercent = parseFloat(overrides.tcsPercent) || 0;
 
     const tcsAmt = this.round((grossAmt * tcsPercent) / 100, 2);
 
-    const netAmt = this.round(
-      grossAmt + transAmt + otherPlus - otherSub + tcsAmt,
+    const calculatedNet = this.round(
+      (grossAmt + totalTax + totalCess + transAmt + otherPlus + tcsAmt) - (totalCd + totalDisc + otherSub),
       2
     );
 
+    const netAmt = getEff(overrides.netAmt, calculatedNet);
+
     const igst = overrides.igst || false;
-    const cgstAmt = igst ? 0 : this.round(totalTax / 2, 2);
-    const sgstAmt = igst ? 0 : this.round(totalTax / 2, 2);
+    const cgstAmt = igst ? 0 : getEff(overrides.cgstAmt, this.round(totalTax / 2, 2));
+    const sgstAmt = igst ? 0 : getEff(overrides.sgstAmt, this.round(totalTax / 2, 2));
     const igstAmt = igst ? totalTax : 0;
 
     return {
       grossAmt,
       transAmt,
-      displayAmt: grossAmt,
+      displayAmt: getEff(overrides.displayAmt, grossAmt),
       cdAmt: totalCd,
       discAmt: totalDisc,
       cessAmt: totalCess,
@@ -147,7 +168,7 @@ export class PurchaseCalculator {
    */
   static totalItemQty(items) {
     return this.round(
-      items.reduce((sum, i) => sum + (parseFloat(i.itemQty) || 0), 0),
+      items.filter(i => i.Productcode).reduce((sum, i) => sum + (parseFloat(i.ItemQty) || 0), 0),
       2
     );
   }
